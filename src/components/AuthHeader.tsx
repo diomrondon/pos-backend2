@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { ShieldCheck, UserCheck, Lock, LogOut, Store, Building2, HelpCircle } from 'lucide-react';
+import { ShieldCheck, UserCheck, Lock, LogOut, Store, Building2, HelpCircle, Download } from 'lucide-react';
 import { Usuario, Sucursal } from '../types';
+import { downloadStandaloneHtmlFile } from '../lib/downloadHtml';
 
 interface AuthHeaderProps {
   currentUser: Usuario | null;
@@ -8,6 +9,7 @@ interface AuthHeaderProps {
   sucursales: Sucursal[];
   onSelectUser: (user: Usuario) => void;
   onLogout: () => void;
+  onOpenHtmlModal?: () => void;
 }
 
 export const AuthHeader: React.FC<AuthHeaderProps> = ({
@@ -16,6 +18,7 @@ export const AuthHeader: React.FC<AuthHeaderProps> = ({
   sucursales,
   onSelectUser,
   onLogout,
+  onOpenHtmlModal,
 }) => {
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [showPinHelpModal, setShowPinHelpModal] = useState(false);
@@ -132,6 +135,24 @@ export const AuthHeader: React.FC<AuthHeaderProps> = ({
             >
               <UserCheck className="w-4 h-4 stroke-[2.5]" />
               <span>Iniciar Sesión con PIN</span>
+            </button>
+          )}
+
+          {currentUser?.rol === 'admin' && (
+            <button
+              type="button"
+              onClick={() => {
+                if (onOpenHtmlModal) {
+                  onOpenHtmlModal();
+                } else {
+                  downloadStandaloneHtmlFile();
+                }
+              }}
+              className="px-3 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-[11px] font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm hover:scale-102"
+              title="Descargar archivo pos_multisucursal.html (Acceso exclusivo Gerente General)"
+            >
+              <Download className="w-3.5 h-3.5 text-emerald-400 stroke-[2.5]" />
+              <span>Descargar .HTML</span>
             </button>
           )}
 

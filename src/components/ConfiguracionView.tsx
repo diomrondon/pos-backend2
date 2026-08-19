@@ -17,9 +17,12 @@ import {
   Sliders,
   DollarSign,
   Lock,
+  Download,
+  Code,
 } from 'lucide-react';
 import { Usuario, EmpresaConfig, Sucursal, ModuloPermisos } from '../types';
 import { formatBs } from '../lib/currency';
+import { StandaloneHtmlDownloader } from './StandaloneHtmlDownloader';
 
 interface ConfiguracionViewProps {
   usuarios: Usuario[];
@@ -42,7 +45,7 @@ export const ConfiguracionView: React.FC<ConfiguracionViewProps> = ({
 }) => {
   const isGeneralManager = currentUser?.rol === 'admin';
 
-  const [activeSubTab, setActiveSubTab] = useState<'usuarios' | 'empresa' | 'sucursales' | 'tasa'>('usuarios');
+  const [activeSubTab, setActiveSubTab] = useState<'usuarios' | 'empresa' | 'sucursales' | 'tasa' | 'html'>('usuarios');
 
   // Company Form State
   const [companyForm, setCompanyForm] = useState<EmpresaConfig>({ ...empresaConfig });
@@ -58,6 +61,7 @@ export const ConfiguracionView: React.FC<ConfiguracionViewProps> = ({
   const [editPermisos, setEditPermisos] = useState<ModuloPermisos>({
     dashboard: false,
     ventas: true,
+    inventario: false,
     compras: false,
     clientes: false,
     proveedores: false,
@@ -79,6 +83,7 @@ export const ConfiguracionView: React.FC<ConfiguracionViewProps> = ({
       u.permisos || {
         dashboard: u.rol === 'admin',
         ventas: true,
+        inventario: u.rol === 'admin' || u.rol === 'inventario',
         compras: u.rol === 'admin' || u.rol === 'inventario',
         clientes: u.rol === 'admin',
         proveedores: u.rol === 'admin' || u.rol === 'inventario',
@@ -144,6 +149,7 @@ export const ConfiguracionView: React.FC<ConfiguracionViewProps> = ({
   const modulesList: { key: keyof ModuloPermisos; label: string; desc: string }[] = [
     { key: 'dashboard', label: 'Dashboard Ejecutivo', desc: 'Acceso a métricas de ventas, ingresos, utilidades y gráficos' },
     { key: 'ventas', label: 'Ventas y Punto de Venta (POS)', desc: 'Facturación en caja, lectura de código de barras y cobros' },
+    { key: 'inventario', label: 'Control de Inventario', desc: 'Stock multi-sucursal, traspasos entre tiendas y catálogo maestro' },
     { key: 'compras', label: 'Módulo de Compras', desc: 'Registro de compras de mercancía y recepción en almacén' },
     { key: 'clientes', label: 'Directorio de Clientes', desc: 'Gestión de clientes, datos de contacto y límites de crédito' },
     { key: 'proveedores', label: 'Directorio de Proveedores', desc: 'Gestión de proveedores, contactos y datos de facturación' },
@@ -220,6 +226,18 @@ export const ConfiguracionView: React.FC<ConfiguracionViewProps> = ({
           >
             <TrendingUp className="w-3.5 h-3.5" />
             <span>Cotización Diaria</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveSubTab('html')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
+              activeSubTab === 'html'
+                ? 'bg-emerald-500 text-slate-950 font-bold shadow'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>Descargar .HTML</span>
           </button>
         </div>
       </div>
@@ -423,6 +441,7 @@ export const ConfiguracionView: React.FC<ConfiguracionViewProps> = ({
                           setEditPermisos({
                             dashboard: false,
                             ventas: true,
+                            inventario: false,
                             compras: false,
                             clientes: false,
                             proveedores: false,
@@ -442,6 +461,7 @@ export const ConfiguracionView: React.FC<ConfiguracionViewProps> = ({
                           setEditPermisos({
                             dashboard: true,
                             ventas: true,
+                            inventario: true,
                             compras: true,
                             clientes: true,
                             proveedores: true,
@@ -719,6 +739,15 @@ export const ConfiguracionView: React.FC<ConfiguracionViewProps> = ({
               </p>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* SUB-TAB 5: DESCARGAR ARCHIVO HTML AUTÓNOMO */}
+      {/* ======================================================== */}
+      {activeSubTab === 'html' && (
+        <div className="space-y-4">
+          <StandaloneHtmlDownloader />
         </div>
       )}
     </div>

@@ -7,6 +7,7 @@ import { PdfReportsCenter } from './components/PdfReportsCenter';
 import { DailyRateModal } from './components/DailyRateModal';
 import { CompanySettingsModal } from './components/CompanySettingsModal';
 import { ComprasManager } from './components/ComprasManager';
+import { InventoryManager } from './components/InventoryManager';
 import { ClientesManager } from './components/ClientesManager';
 import { ProveedoresManager } from './components/ProveedoresManager';
 import { CxcManager } from './components/CxcManager';
@@ -37,14 +38,19 @@ import {
   Compra,
   CuentaPorCobrar,
   CuentaPorPagar,
+  DetallePagoVenta,
 } from './types';
 import { getStoredSupabaseConfig, createCustomSupabaseClient } from './lib/supabaseClient';
 import { getStoredEmpresaConfig, saveEmpresaConfig, hasSetTasaToday, markTasaSetToday, formatUSD, formatBs } from './lib/currency';
-import { ShieldAlert, Lock, ShoppingCart, RefreshCw } from 'lucide-react';
+import { ShieldAlert, Lock, ShoppingCart, RefreshCw, Download, X, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { StandaloneHtmlDownloader } from './components/StandaloneHtmlDownloader';
+import { downloadStandaloneHtmlFile } from './lib/downloadHtml';
 
 export default function App() {
   // Navigation State (starts in 'ventas' or 'dashboard' if admin)
   const [activeTab, setActiveTab] = useState<SidebarTab>('ventas');
+  // Sidebar Collapse State (collapses left on module selection)
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(false);
 
   // App State: Users
   const [usuarios, setUsuarios] = useState<Usuario[]>(INITIAL_USUARIOS);
@@ -54,6 +60,7 @@ export default function App() {
   const [empresaConfig, setEmpresaConfig] = useState<EmpresaConfig>(getStoredEmpresaConfig);
   const [showDailyRateModal, setShowDailyRateModal] = useState<boolean>(false);
   const [showCompanySettingsModal, setShowCompanySettingsModal] = useState<boolean>(false);
+  const [showHtmlModal, setShowHtmlModal] = useState<boolean>(false);
 
   // Business Entities State
   const [sucursales, setSucursales] = useState<Sucursal[]>(() => [
@@ -165,10 +172,12 @@ export default function App() {
     return acc + v.detalles.reduce((dAcc, d) => dAcc + d.cantidad, 0);
   }, 0);
 
-  // Handler: Register a new sale from POS with Cashier Audit
+  // Handler: Register a new sale from POS with Cashier Audit, Customer and Payment breakdown
   const handleRegistrarVenta = async (
     sucursalId: number,
-    items: { producto: Producto; cantidad: number }[]
+    items: { producto: Producto; cantidad: number }[],
+    cliente: { id: number | null; nombre: string; rif: string },
+    pagoDetalle: DetallePagoVenta
   ) => {
     const totalVenta = items.reduce((acc, item) => acc + item.producto.precio * item.cantidad, 0);
     const newVentaId = ventas.length + 1;
@@ -188,8 +197,14 @@ export default function App() {
       sucursal_id: sucursalId,
       usuario_id: currentUser ? currentUser.id : undefined,
       usuario_nombre: currentUser ? currentUser.nombre_completo : 'Cajero Anónimo',
+      cliente_id: cliente.id,
+      cliente_nombre: cliente.nombre,
+      cliente_rif: cliente.rif,
       fecha: new Date().toISOString(),
       total: totalVenta,
+      metodo_pago: pagoDetalle.metodo,
+      referencia_pago: pagoDetalle.referencia_pago_movil,
+      pago_detalle: pagoDetalle,
       detalles,
     };
 
@@ -264,9 +279,98 @@ export default function App() {
     }
   };
 
+  // Handler: Transfer Stock between branches
+  const handleTransferStock = (
+    origenId: number,
+    destinoId: number,
+    productoId: number,
+    cantidad: number
+  ): boolean => {
+    const origenItem = inventario.find(
+      (i) => i.sucursal_id === origenId && i.producto_id === productoId
+    );
+    if (!origenItem || origenItem.stock < cantidad) {
+      return false;
+    }
+
+    setInventario((prev) => {
+      // Deduct from origen
+      let next = prev.map((item) => {
+        if (item.sucursal_id === origenId && item.producto_id === productoId) {
+          return { ...item, stock: item.stock - cantidad };
+        }
+        return item;
+      });
+
+      // Add to destino (or create if not existing)
+      const destExists = next.some(
+        (item) => item.sucursal_id === destinoId && item.producto_id === productoId
+      );
+
+      if (destExists) {
+        next = next.map((item) => {
+          if (item.sucursal_id === destinoId && item.producto_id === productoId) {
+            return { ...item, stock: item.stock + cantidad };
+          }
+          return item;
+        });
+      } else {
+        const newInvId = Math.max(...next.map((i) => i.id), 0) + 1;
+        next.push({
+          id: newInvId,
+          sucursal_id: destinoId,
+          producto_id: productoId,
+          stock: cantidad,
+        });
+      }
+
+      return next;
+    });
+
+    return true;
+  };
+
+  // Handler: Add new product to global catalog
+  const handleAddProduct = (
+    codigoBarras: string,
+    nombre: string,
+    precio: number,
+    costo: number,
+    stockOficina: number
+  ) => {
+    const newProdId = Math.max(...productos.map((p) => p.id), 0) + 1;
+    const newProd: Producto = {
+      id: newProdId,
+      codigo_barras: codigoBarras,
+      nombre,
+      precio,
+      costo: +(costo || +(precio * 0.7).toFixed(2)),
+    };
+    setProductos((prev) => [...prev, newProd]);
+
+    // Initialize stock for the new product across 3 branches
+    setInventario((prev) => [
+      ...prev,
+      { id: Math.max(...prev.map((i) => i.id), 0) + 1, sucursal_id: 1, producto_id: newProdId, stock: 0 },
+      { id: Math.max(...prev.map((i) => i.id), 0) + 2, sucursal_id: 2, producto_id: newProdId, stock: 0 },
+      { id: Math.max(...prev.map((i) => i.id), 0) + 3, sucursal_id: 3, producto_id: newProdId, stock: stockOficina },
+    ]);
+  };
+
+  // Handler: Update product
+  const handleUpdateProduct = (updated: Producto) => {
+    setProductos((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+  };
+
+  // Handler: Delete product
+  const handleDeleteProduct = (productId: number) => {
+    setProductos((prev) => prev.filter((p) => p.id !== productId));
+    setInventario((prev) => prev.filter((i) => i.producto_id !== productId));
+  };
+
   // Handler: Add Client
   const handleAddCliente = (newCliente: Omit<Cliente, 'id'>) => {
-    const id = clientes.length + 1;
+    const id = Date.now();
     setClientes([...clientes, { ...newCliente, id }]);
   };
 
@@ -275,15 +379,37 @@ export default function App() {
     setClientes(clientes.map((c) => (c.id === updated.id ? updated : c)));
   };
 
+  // Handler: Delete Client
+  const handleDeleteCliente = (id: number) => {
+    const client = clientes.find((c) => c.id === id);
+    if (client && client.saldoPendiente > 0) {
+      alert(`No se puede eliminar el cliente "${client.nombre}" porque tiene un saldo deudor pendiente de $${client.saldoPendiente.toFixed(2)}.`);
+      return false;
+    }
+    setClientes((prev) => prev.filter((c) => c.id !== id));
+    return true;
+  };
+
   // Handler: Add Supplier
   const handleAddProveedor = (newProv: Omit<Proveedor, 'id'>) => {
-    const id = proveedores.length + 1;
+    const id = Date.now();
     setProveedores([...proveedores, { ...newProv, id }]);
   };
 
   // Handler: Update Supplier
   const handleUpdateProveedor = (updated: Proveedor) => {
     setProveedores(proveedores.map((p) => (p.id === updated.id ? updated : p)));
+  };
+
+  // Handler: Delete Supplier
+  const handleDeleteProveedor = (id: number) => {
+    const prov = proveedores.find((p) => p.id === id);
+    if (prov && prov.saldoPendiente > 0) {
+      alert(`No se puede eliminar el proveedor "${prov.nombre}" porque tiene un saldo deudor pendiente de $${prov.saldoPendiente.toFixed(2)}.`);
+      return false;
+    }
+    setProveedores((prev) => prev.filter((p) => p.id !== id));
+    return true;
   };
 
   // Handler: Register CxC Abono (payment from client)
@@ -411,6 +537,7 @@ export default function App() {
         sucursales={sucursales}
         onSelectUser={(u) => setCurrentUser(u)}
         onLogout={() => setCurrentUser(null)}
+        onOpenHtmlModal={() => setShowHtmlModal(true)}
       />
 
       {/* Main Layout with Left Sidebar */}
@@ -418,35 +545,71 @@ export default function App() {
         {/* Left Sidebar */}
         <Sidebar
           activeTab={activeTab}
-          onSelectTab={(tab) => setActiveTab(tab)}
+          onSelectTab={(tab) => {
+            setActiveTab(tab);
+            setIsSidebarCollapsed(true); // Automatically collapse sidebar to the left upon choosing a module
+          }}
           currentUser={currentUser}
           empresaConfig={empresaConfig}
           onOpenRateModal={() => setShowDailyRateModal(true)}
           onLogout={() => setCurrentUser(null)}
+          onOpenHtmlModal={() => setShowHtmlModal(true)}
+          isCollapsed={isSidebarCollapsed}
+          onToggleCollapse={() => setIsSidebarCollapsed((prev) => !prev)}
         />
 
         {/* Content Area */}
         <div className="flex-1 flex flex-col overflow-y-auto custom-scrollbar">
           {/* Top Quick Metrics & Status Banner */}
-          <div className="bg-slate-900/60 border-b border-slate-800/80 px-6 py-2.5 flex items-center justify-between gap-4">
+          <div className="bg-slate-900/60 border-b border-slate-800/80 px-4 sm:px-6 py-2.5 flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <span className="text-xs font-semibold text-slate-300">
+              {/* Toggle Sidebar Button in Top Bar */}
+              <button
+                type="button"
+                onClick={() => setIsSidebarCollapsed((prev) => !prev)}
+                className="p-1.5 rounded-lg bg-slate-800/90 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700/80 transition-colors cursor-pointer flex items-center gap-1.5 text-xs shadow-sm"
+                title={isSidebarCollapsed ? 'Expandir menú lateral' : 'Colapsar menú lateral hacia la izquierda'}
+              >
+                {isSidebarCollapsed ? (
+                  <PanelLeftOpen className="w-4 h-4 text-emerald-400" />
+                ) : (
+                  <PanelLeftClose className="w-4 h-4 text-slate-400" />
+                )}
+                <span className="hidden md:inline font-medium text-[11px]">
+                  {isSidebarCollapsed ? 'Expandir Menú' : 'Colapsar Menú'}
+                </span>
+              </button>
+
+              <span className="text-xs font-semibold text-slate-300 truncate">
                 {empresaConfig.nombreEmpresa}
               </span>
-              <span className="text-slate-600">•</span>
-              <span className="text-xs text-emerald-400 font-mono font-medium">
+              <span className="text-slate-600 hidden sm:inline">•</span>
+              <span className="text-xs text-emerald-400 font-mono font-medium hidden sm:inline">
                 1 USD = {formatBs(1, empresaConfig.tasaCambio)}
               </span>
             </div>
 
-            <div className="flex items-center gap-4 text-xs">
+            <div className="flex items-center gap-3 text-xs">
               <div className="flex items-center gap-1.5 font-mono">
                 <span className="text-slate-400">Ventas Hoy:</span>
                 <span className="font-bold text-white">{formatUSD(totalSalesToday)}</span>
-                <span className="text-[11px] text-emerald-400">
+                <span className="text-[11px] text-emerald-400 hidden sm:inline">
                   ({formatBs(totalSalesToday, empresaConfig.tasaCambio)})
                 </span>
               </div>
+
+              {/* Standalone HTML download button directly in top banner (General Manager only) */}
+              {isGeneralManager && (
+                <button
+                  type="button"
+                  onClick={() => downloadStandaloneHtmlFile()}
+                  className="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 font-bold flex items-center gap-1.5 transition-all cursor-pointer text-xs"
+                  title="Descargar pos_multisucursal.html (Acceso exclusivo Gerente General)"
+                >
+                  <Download className="w-3.5 h-3.5 text-emerald-400 stroke-[2.5]" />
+                  <span className="hidden sm:inline">Descargar .HTML</span>
+                </button>
+              )}
 
               <button
                 type="button"
@@ -508,12 +671,29 @@ export default function App() {
                     inventario={inventario}
                     currentUser={currentUser}
                     empresaConfig={empresaConfig}
+                    clientes={clientes}
                     onRegistrarVenta={handleRegistrarVenta}
+                    onAddCliente={handleAddCliente}
                     ventas={ventas}
                   />
                 )}
 
-                {/* 3. COMPRAS */}
+                {/* 3. INVENTARIO */}
+                {activeTab === 'inventario' && (
+                  <InventoryManager
+                    sucursales={sucursales}
+                    productos={productos}
+                    inventario={inventario}
+                    currentUser={currentUser}
+                    empresaConfig={empresaConfig}
+                    onTransferStock={handleTransferStock}
+                    onAddProduct={handleAddProduct}
+                    onUpdateProduct={handleUpdateProduct}
+                    onDeleteProduct={handleDeleteProduct}
+                  />
+                )}
+
+                {/* 4. COMPRAS */}
                 {activeTab === 'compras' && (
                   <ComprasManager
                     compras={compras}
@@ -532,6 +712,7 @@ export default function App() {
                     clientes={clientes}
                     onAddCliente={handleAddCliente}
                     onUpdateCliente={handleUpdateCliente}
+                    onDeleteCliente={handleDeleteCliente}
                     empresaConfig={empresaConfig}
                   />
                 )}
@@ -542,6 +723,7 @@ export default function App() {
                     proveedores={proveedores}
                     onAddProveedor={handleAddProveedor}
                     onUpdateProveedor={handleUpdateProveedor}
+                    onDeleteProveedor={handleDeleteProveedor}
                     empresaConfig={empresaConfig}
                   />
                 )}
@@ -571,7 +753,7 @@ export default function App() {
                 )}
 
                 {/* 8. REPORTES */}
-                {activeTab === 'reportes' && <PdfReportsCenter />}
+                {activeTab === 'reportes' && <PdfReportsCenter currentUser={currentUser} />}
 
                 {/* 9. CONFIGURACIÓN (PERMISOS, NOMBRES, PIN, EMPRESA) */}
                 {activeTab === 'configuracion' && (
@@ -608,6 +790,23 @@ export default function App() {
         onSaveConfig={handleSaveEmpresaConfig}
         onClose={() => setShowCompanySettingsModal(false)}
       />
+
+      {/* Standalone HTML File Downloader Modal */}
+      {showHtmlModal && (
+        <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto custom-scrollbar shadow-2xl p-6 relative animate-fade-in">
+            <button
+              type="button"
+              onClick={() => setShowHtmlModal(false)}
+              className="absolute top-4 right-4 p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
+              title="Cerrar ventana"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <StandaloneHtmlDownloader />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

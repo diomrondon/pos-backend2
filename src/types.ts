@@ -22,6 +22,7 @@ export interface InventarioItem {
 export interface ModuloPermisos {
   dashboard: boolean;
   ventas: boolean;
+  inventario: boolean;
   compras: boolean;
   clientes: boolean;
   proveedores: boolean;
@@ -42,16 +43,31 @@ export interface Usuario {
   permisos?: ModuloPermisos;
 }
 
+export interface DetallePagoVenta {
+  metodo: 'pago_movil' | 'efectivo_usd' | 'efectivo_bs' | 'mixto';
+  referencia_pago_movil?: string;
+  monto_usd: number;
+  monto_bs: number;
+  efectivo_usd_recibido?: number;
+  efectivo_bs_recibido?: number;
+  pago_movil_monto_bs?: number;
+  vuelto_usd?: number;
+  vuelto_bs?: number;
+}
+
 export interface Venta {
   id: number;
   sucursal_id: number;
   usuario_id?: number;
   usuario_nombre?: string;
-  cliente_id?: number;
+  cliente_id?: number | null;
   cliente_nombre?: string;
+  cliente_rif?: string;
   fecha: string;
   total: number;
   metodo_pago?: string;
+  referencia_pago?: string;
+  pago_detalle?: DetallePagoVenta;
   detalles: DetalleVenta[];
 }
 

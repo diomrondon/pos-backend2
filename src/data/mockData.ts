@@ -21,6 +21,7 @@ export const INITIAL_SUCURSALES: Sucursal[] = [
 export const DEFAULT_CASHIER_PERMISSIONS: ModuloPermisos = {
   dashboard: false,
   ventas: true,
+  inventario: false,
   compras: false,
   clientes: false,
   proveedores: false,
@@ -33,6 +34,7 @@ export const DEFAULT_CASHIER_PERMISSIONS: ModuloPermisos = {
 export const DEFAULT_ADMIN_PERMISSIONS: ModuloPermisos = {
   dashboard: true,
   ventas: true,
+  inventario: true,
   compras: true,
   clientes: true,
   proveedores: true,
@@ -56,9 +58,9 @@ export const INITIAL_USUARIOS: Usuario[] = [
   { id: 8, username: 'supervisor_t2', nombre_completo: 'Isabel Vargas', pin: '2004', rol: 'supervisor', sucursal_id: 2, cargo: 'Supervisora Tienda 2', permisos: { ...DEFAULT_CASHIER_PERMISSIONS, reportes: true } },
 
   // 4 Usuarios para Área de Inventario y Oficina Central
-  { id: 9, username: 'inv_jefe', nombre_completo: 'Jorge Martínez', pin: '3001', rol: 'inventario', sucursal_id: 3, cargo: 'Jefe de Almacén e Inventarios', permisos: { ...DEFAULT_CASHIER_PERMISSIONS, compras: true, proveedores: true } },
-  { id: 10, username: 'inv_operador1', nombre_completo: 'Karla Benítez', pin: '3002', rol: 'inventario', sucursal_id: 3, cargo: 'Auditora de Existencias', permisos: { ...DEFAULT_CASHIER_PERMISSIONS, compras: true } },
-  { id: 11, username: 'inv_operador2', nombre_completo: 'Luis Navarro', pin: '3003', rol: 'inventario', sucursal_id: 3, cargo: 'Encargado de Traspasos y Recepción', permisos: { ...DEFAULT_CASHIER_PERMISSIONS, compras: true } },
+  { id: 9, username: 'inv_jefe', nombre_completo: 'Jorge Martínez', pin: '3001', rol: 'inventario', sucursal_id: 3, cargo: 'Jefe de Almacén e Inventarios', permisos: { ...DEFAULT_CASHIER_PERMISSIONS, inventario: true, compras: true, proveedores: true } },
+  { id: 10, username: 'inv_operador1', nombre_completo: 'Karla Benítez', pin: '3002', rol: 'inventario', sucursal_id: 3, cargo: 'Auditora de Existencias', permisos: { ...DEFAULT_CASHIER_PERMISSIONS, inventario: true, compras: true } },
+  { id: 11, username: 'inv_operador2', nombre_completo: 'Luis Navarro', pin: '3003', rol: 'inventario', sucursal_id: 3, cargo: 'Encargado de Traspasos y Recepción', permisos: { ...DEFAULT_CASHIER_PERMISSIONS, inventario: true, compras: true } },
   { id: 12, username: 'admin_general', nombre_completo: 'Administrador General', pin: '9999', rol: 'admin', sucursal_id: null, cargo: 'Gerente General / Admin Sistema', permisos: { ...DEFAULT_ADMIN_PERMISSIONS } },
 ];
 
@@ -211,11 +213,11 @@ export const INITIAL_CXP: CuentaPorPagar[] = [
 
 
 export const INITIAL_PRODUCTOS: Producto[] = [
-  { id: 1, codigo_barras: '123456', nombre: 'Arroz Integral 1kg', precio: 2.50 },
-  { id: 2, codigo_barras: '789012', nombre: 'Aceite Vegetal 1L', precio: 4.80 },
-  { id: 3, codigo_barras: '345678', nombre: 'Harina de Trigo 1kg', precio: 1.75 },
-  { id: 4, codigo_barras: '901234', nombre: 'Café Molido Premium 500g', precio: 6.20 },
-  { id: 5, codigo_barras: '567890', nombre: 'Detergente Líquido 2L', precio: 5.90 },
+  { id: 1, codigo_barras: '123456', nombre: 'Arroz Integral 1kg', precio: 2.50, costo: 1.80 },
+  { id: 2, codigo_barras: '789012', nombre: 'Aceite Vegetal 1L', precio: 4.80, costo: 3.50 },
+  { id: 3, codigo_barras: '345678', nombre: 'Harina de Trigo 1kg', precio: 1.75, costo: 1.20 },
+  { id: 4, codigo_barras: '901234', nombre: 'Café Molido Premium 500g', precio: 6.20, costo: 4.50 },
+  { id: 5, codigo_barras: '567890', nombre: 'Detergente Líquido 2L', precio: 5.90, costo: 4.10 },
 ];
 
 export const INITIAL_INVENTARIO: InventarioItem[] = [

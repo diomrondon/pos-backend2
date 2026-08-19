@@ -17,11 +17,20 @@ import {
   Server,
   Zap,
   Lock,
-  ArrowRight
+  ArrowRight,
+  Code
 } from 'lucide-react';
+import { StandaloneHtmlDownloader } from './StandaloneHtmlDownloader';
+import { downloadStandaloneHtmlFile } from '../lib/downloadHtml';
+import { Usuario } from '../types';
 
-export const PdfReportsCenter: React.FC = () => {
-  const [activeDoc, setActiveDoc] = useState<'gerencia' | 'tecnico'>('gerencia');
+interface PdfReportsCenterProps {
+  currentUser?: Usuario | null;
+}
+
+export const PdfReportsCenter: React.FC<PdfReportsCenterProps> = ({ currentUser }) => {
+  const isGeneralManager = currentUser?.rol === 'admin';
+  const [activeDoc, setActiveDoc] = useState<'gerencia' | 'tecnico' | 'html'>('gerencia');
   const [generatingPdf, setGeneratingPdf] = useState(false);
 
   // Function to generate the Technical PDF using jsPDF
@@ -417,6 +426,17 @@ export const PdfReportsCenter: React.FC = () => {
 
           {/* Quick Action Buttons for Direct PDF Downloads */}
           <div className="flex flex-wrap items-center gap-2.5">
+            {isGeneralManager && (
+              <button
+                onClick={() => downloadStandaloneHtmlFile()}
+                className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs px-4 py-2.5 rounded-xl shadow-lg shadow-emerald-500/20 transition-all flex items-center gap-2 cursor-pointer"
+                title="Descargar archivo pos_multisucursal.html listo para usar (Exclusivo Gerente General)"
+              >
+                <Download className="w-4 h-4 stroke-[2.5]" />
+                <span>Descargar .HTML Autónomo</span>
+              </button>
+            )}
+
             <button
               onClick={generateExecutivePdf}
               disabled={generatingPdf}
@@ -429,9 +449,9 @@ export const PdfReportsCenter: React.FC = () => {
             <button
               onClick={generateTechnicalPdf}
               disabled={generatingPdf}
-              className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl shadow-lg shadow-emerald-600/30 transition-all flex items-center gap-2 cursor-pointer"
+              className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-bold text-xs px-4 py-2.5 rounded-xl transition-all flex items-center gap-2 cursor-pointer"
             >
-              <Download className="w-4 h-4" />
+              <Download className="w-4 h-4 text-emerald-400" />
               <span>Descargar PDF Técnico</span>
             </button>
 
@@ -447,7 +467,7 @@ export const PdfReportsCenter: React.FC = () => {
         </div>
 
         {/* Tab Toggle for On-Screen Reading */}
-        <div className="flex items-center gap-2 mt-6 pt-4 border-t border-slate-800">
+        <div className="flex flex-wrap items-center gap-2 mt-6 pt-4 border-t border-slate-800">
           <button
             onClick={() => setActiveDoc('gerencia')}
             className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
@@ -464,13 +484,27 @@ export const PdfReportsCenter: React.FC = () => {
             onClick={() => setActiveDoc('tecnico')}
             className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
               activeDoc === 'tecnico'
-                ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/20'
+                ? 'bg-purple-600 text-white shadow-md shadow-purple-600/20'
                 : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800'
             }`}
           >
             <Code2 className="w-4 h-4" />
             2. Informe Técnico Detallado (Arquitectura & SQL)
           </button>
+
+          {isGeneralManager && (
+            <button
+              onClick={() => setActiveDoc('html')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                activeDoc === 'html'
+                  ? 'bg-emerald-500 text-slate-950 font-extrabold shadow-md shadow-emerald-500/20'
+                  : 'bg-slate-950 text-emerald-400 hover:text-emerald-300 border border-slate-800'
+              }`}
+            >
+              <Code className="w-4 h-4" />
+              3. Archivo Único Autónomo (pos_multisucursal.html)
+            </button>
+          )}
         </div>
       </div>
 
@@ -820,6 +854,13 @@ export const PdfReportsCenter: React.FC = () => {
                 <span>Descargar PDF Técnico</span>
               </button>
             </div>
+          </div>
+        )}
+
+        {/* DOCUMENT 3: STANDALONE HTML FILE DOWNLOADER */}
+        {activeDoc === 'html' && (
+          <div className="p-6">
+            <StandaloneHtmlDownloader />
           </div>
         )}
       </div>
