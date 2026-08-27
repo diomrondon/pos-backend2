@@ -43,6 +43,7 @@ import {
   DetallePagoVenta 
 } from '../types';
 import { formatUSD, formatBs, formatDual } from '../lib/currency';
+import { FiscalCortesView } from './FiscalCortesView';
 
 interface PosSimulatorProps {
   sucursales: Sucursal[];
@@ -161,7 +162,7 @@ export const PosSimulator: React.FC<PosSimulatorProps> = ({
 
   // Payment / Checkout Modal State
   const [showCheckoutModal, setShowCheckoutModal] = useState<boolean>(false);
-  const [paymentMethod, setPaymentMethod] = useState<'pago_movil' | 'efectivo_usd' | 'efectivo_bs' | 'mixto'>('pago_movil');
+  const [paymentMethod, setPaymentMethod] = useState<'pago_movil' | 'efectivo_usd' | 'efectivo_bs' | 'tarjeta' | 'mixto'>('pago_movil');
   
   // Payment Inputs
   const [pagoMovilRef, setPagoMovilRef] = useState<string>('');
@@ -169,11 +170,21 @@ export const PosSimulator: React.FC<PosSimulatorProps> = ({
   const [efectivoUsdRecibido, setEfectivoUsdRecibido] = useState<string>('');
   const [efectivoBsRecibido, setEfectivoBsRecibido] = useState<string>('');
   
+  // Tarjeta (Punto de Venta / Débito / Crédito / Internacional) Inputs
+  const [tarjetaTipo, setTarjetaTipo] = useState<'debito' | 'credito' | 'internacional'>('debito');
+  const [tarjetaBanco, setTarjetaBanco] = useState<string>('0134 - Banesco (Terminal #1)');
+  const [tarjetaReferencia, setTarjetaReferencia] = useState<string>('');
+  const [tarjetaLote, setTarjetaLote] = useState<string>('');
+
   // Mixed Payment Inputs
   const [mixtoUsd, setMixtoUsd] = useState<string>('');
   const [mixtoBsEfectivo, setMixtoBsEfectivo] = useState<string>('');
   const [mixtoPagoMovilBs, setMixtoPagoMovilBs] = useState<string>('');
   const [mixtoPagoMovilRef, setMixtoPagoMovilRef] = useState<string>('');
+  const [mixtoTarjetaBs, setMixtoTarjetaBs] = useState<string>('');
+  const [mixtoTarjetaRef, setMixtoTarjetaRef] = useState<string>('');
+  const [mixtoTarjetaTipo, setMixtoTarjetaTipo] = useState<'debito' | 'credito' | 'internacional'>('debito');
+  const [mixtoTarjetaBanco, setMixtoTarjetaBanco] = useState<string>('0134 - Banesco (Terminal #1)');
 
   // Ticket Receipt preview
   const [lastCompletedTicket, setLastCompletedTicket] = useState<{
@@ -182,12 +193,18 @@ export const PosSimulator: React.FC<PosSimulatorProps> = ({
     clienteNombre: string;
     clienteRif: string;
     items: { producto: Producto; cantidad: number }[];
+    subtotalNeto: number;
+    baseImponible: number;
+    montoExento: number;
+    montoIva: number;
     totalUsd: number;
     tasa: number;
     fecha: string;
     pagoDetalle: DetallePagoVenta;
   } | null>(null);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
+  const [showFiscalModal, setShowFiscalModal] = useState(false);
+  const [fiscalModalTipo, setFiscalModalTipo] = useState<'X' | 'Z'>('X');
   
   const barcodeInputRef = useRef<HTMLInputElement>(null);
 
@@ -200,10 +217,10 @@ export const PosSimulator: React.FC<PosSimulatorProps> = ({
 
   // Auto-focus barcode input for instant keyboard/scanner typing
   useEffect(() => {
-    if (!showCheckoutModal && !showClientModal && !showReceiptModal) {
+    if (!showCheckoutModal && !showClientModal && !showReceiptModal && !showFiscalModal) {
       barcodeInputRef.current?.focus();
     }
-  }, [selectedSucursalId, cart, showCheckoutModal, showClientModal, showReceiptModal]);
+  }, [selectedSucursalId, cart, showCheckoutModal, showClientModal, showReceiptModal, showFiscalModal]);
 
   const tiendaActual = sucursales.find((s) => s.id === selectedSucursalId) || sucursales[0];
 
@@ -273,7 +290,8 @@ export const PosSimulator: React.FC<PosSimulatorProps> = ({
     setCart(
       cart.map((item) => {
         if (item.producto.id === productoId) {
-          const newQty = item.cantidad + delta;
+          const step = (item.producto.unidad_medida === 'KG' || item.producto.unidad_medida === 'L') ? (delta > 0 ? 0.25 : -0.25) : delta;
+          const newQty = +(item.cantidad + step).toFixed(3);
           if (newQty > item.stockDisponible) {
             setErrorMsg(`No puedes agregar más del stock disponible (${item.stockDisponible})`);
             return item;
@@ -285,12 +303,38 @@ export const PosSimulator: React.FC<PosSimulatorProps> = ({
     );
   };
 
+  const setDirectQuantity = (productoId: number, valStr: string) => {
+    const parsed = parseFloat(valStr);
+    if (isNaN(parsed) || parsed <= 0) return;
+
+    setCart(
+      cart.map((item) => {
+        if (item.producto.id === productoId) {
+          if (parsed > item.stockDisponible) {
+            setErrorMsg(`Stock máximo disponible para '${item.producto.nombre}' es ${item.stockDisponible}`);
+            return { ...item, cantidad: item.stockDisponible };
+          }
+          return { ...item, cantidad: +parsed.toFixed(3) };
+        }
+        return item;
+      })
+    );
+  };
+
   const removeItem = (productoId: number) => {
     setCart(cart.filter((item) => item.producto.id !== productoId));
   };
 
-  const totalCartUsd = cart.reduce((acc, item) => acc + item.producto.precio * item.cantidad, 0);
-  const totalCartBs = totalCartUsd * empresaConfig.tasaCambio;
+  const subtotalNetoCart = cart.reduce((acc, item) => acc + item.producto.precio * item.cantidad, 0);
+  const baseImponibleCart = cart
+    .filter((i) => !i.producto.exento_iva)
+    .reduce((acc, item) => acc + item.producto.precio * item.cantidad, 0);
+  const montoExentoCart = cart
+    .filter((i) => !!i.producto.exento_iva)
+    .reduce((acc, item) => acc + item.producto.precio * item.cantidad, 0);
+  const montoIvaCart = +(baseImponibleCart * 0.16).toFixed(2);
+  const totalCartUsd = +(baseImponibleCart + montoIvaCart + montoExentoCart).toFixed(2);
+  const totalCartBs = +(totalCartUsd * empresaConfig.tasaCambio).toFixed(2);
 
   // Open Checkout Modal and initialize fields
   const handleOpenCheckout = () => {
@@ -327,7 +371,8 @@ export const PosSimulator: React.FC<PosSimulatorProps> = ({
   const mixtoUsdVal = parseFloat(mixtoUsd) || 0;
   const mixtoBsVal = parseFloat(mixtoBsEfectivo) || 0;
   const mixtoPmVal = parseFloat(mixtoPagoMovilBs) || 0;
-  const mixtoTotalCubiertoUsd = mixtoUsdVal + (mixtoBsVal / empresaConfig.tasaCambio) + (mixtoPmVal / empresaConfig.tasaCambio);
+  const mixtoTarjetaBsVal = parseFloat(mixtoTarjetaBs) || 0;
+  const mixtoTotalCubiertoUsd = mixtoUsdVal + (mixtoBsVal / (empresaConfig.tasaCambio || 1)) + (mixtoPmVal / (empresaConfig.tasaCambio || 1)) + (mixtoTarjetaBsVal / (empresaConfig.tasaCambio || 1));
   const mixtoRestanteUsd = Math.max(0, totalCartUsd - mixtoTotalCubiertoUsd);
   const mixtoRestanteBs = mixtoRestanteUsd * empresaConfig.tasaCambio;
 
@@ -344,7 +389,7 @@ export const PosSimulator: React.FC<PosSimulatorProps> = ({
       <html lang="es">
       <head>
         <meta charset="UTF-8">
-        <title>Ticket de Venta - ${empresaConfig.nombreEmpresa}</title>
+        <title>Factura / Ticket Fiscal - ${empresaConfig.nombreEmpresa}</title>
         <style>
           @page { size: auto; margin: 4mm; }
           * { box-sizing: border-box; }
@@ -368,7 +413,9 @@ export const PosSimulator: React.FC<PosSimulatorProps> = ({
           .item-row { margin-bottom: 4px; }
           .desc { font-weight: bold; }
           .sub-info { font-size: 10px; color: #444444; }
+          .badge-iva { font-size: 9px; font-weight: bold; padding: 0 2px; border: 1px solid #333; border-radius: 2px; margin-left: 3px; }
           .payment-box { background: #f4f4f4; padding: 4px 6px; border-radius: 4px; margin: 4px 0; font-size: 10.5px; }
+          .tax-box { background: #fbfbfb; border: 1px solid #e0e0e0; padding: 4px 6px; border-radius: 4px; margin: 4px 0; font-size: 10px; }
         </style>
       </head>
       <body>
@@ -392,35 +439,60 @@ export const PosSimulator: React.FC<PosSimulatorProps> = ({
         <div class="divider"></div>
         <div>
           <div class="flex font-bold" style="font-size: 9.5px; border-bottom: 1px solid #ccc; padding-bottom: 2px;">
-            <span>DESCRIPCIÓN</span>
+            <span>DESCRIPCIÓN DEL PRODUCTO</span>
             <span>TOTAL</span>
           </div>
-          ${ticket.items.map(it => `
+          ${ticket.items.map(it => {
+            const isExento = !!it.producto.exento_iva;
+            const cantFmt = it.cantidad % 1 === 0 ? it.cantidad : it.cantidad.toFixed(it.cantidad % 1 === 0 ? 0 : 2);
+            return `
             <div class="item-row" style="margin-top: 3px;">
-              <div class="flex">
-                <span class="desc">${it.producto.nombre}</span>
-                <span class="font-bold">${formatUSD(it.producto.precio * it.cantidad)}</span>
-              </div>
-              <div class="flex sub-info">
-                <span>${it.cantidad} x ${formatUSD(it.producto.precio)}</span>
-                <span>${formatBs(it.producto.precio * it.cantidad, ticket.tasa)}</span>
+              <div class="flex" style="align-items: baseline;">
+                <span class="desc" style="font-size: 10px;">
+                  ${it.producto.nombre}
+                  ${isExento ? '<span style="font-weight: bold; color: #b45309; font-size: 9px; margin-left: 2px;">(E)</span>' : ''}
+                  <span style="font-size: 9px; font-weight: normal; color: #555; margin-left: 4px; font-family: monospace;">${cantFmt} x ${formatUSD(it.producto.precio)}</span>
+                </span>
+                <span class="font-bold" style="font-size: 10px; font-family: monospace;">${formatUSD(it.producto.precio * it.cantidad)}</span>
               </div>
             </div>
-          `).join('')}
+            `;
+          }).join('')}
         </div>
 
         <div class="divider"></div>
+        <!-- DISCRIMINACIÓN DE IMPUESTOS Y SUBTOTALES -->
+        <div class="tax-box">
+          <div class="font-bold" style="text-transform: uppercase; font-size: 9px; margin-bottom: 2px; color: #444;">DISCRIMINACIÓN FISCAL / IVA:</div>
+          <div class="flex">
+            <span>Subtotal Neto:</span>
+            <span>${formatUSD(ticket.subtotalNeto)} (${formatBs(ticket.subtotalNeto, ticket.tasa)})</span>
+          </div>
+          <div class="flex">
+            <span>Base Imponible (16%):</span>
+            <span>${formatUSD(ticket.baseImponible)} (${formatBs(ticket.baseImponible, ticket.tasa)})</span>
+          </div>
+          <div class="flex">
+            <span>Monto Exento (0%):</span>
+            <span>${formatUSD(ticket.montoExento)} (${formatBs(ticket.montoExento, ticket.tasa)})</span>
+          </div>
+          <div class="flex font-bold" style="border-top: 1px dashed #ddd; margin-top: 2px; padding-top: 2px;">
+            <span>IVA Liquidado (16%):</span>
+            <span>+${formatUSD(ticket.montoIva)} (+${formatBs(ticket.montoIva, ticket.tasa)})</span>
+          </div>
+        </div>
+
         <div>
-          <div class="flex" style="font-size: 10px;">
+          <div class="flex" style="font-size: 9.5px; color: #555;">
             <span>Tasa Oficial Aplicada:</span>
             <span class="font-bold">1$ = ${formatBs(1, ticket.tasa)}</span>
           </div>
           <div class="flex font-bold" style="font-size: 13px; margin-top: 3px;">
-            <span>TOTAL USD:</span>
+            <span>TOTAL FACTURA USD:</span>
             <span>${formatUSD(ticket.totalUsd)}</span>
           </div>
-          <div class="flex font-bold" style="font-size: 12px;">
-            <span>TOTAL BS:</span>
+          <div class="flex font-bold" style="font-size: 12px; color: #000;">
+            <span>TOTAL FACTURA BS:</span>
             <span>${formatBs(ticket.totalUsd, ticket.tasa)}</span>
           </div>
         </div>
@@ -428,16 +500,27 @@ export const PosSimulator: React.FC<PosSimulatorProps> = ({
         <div class="divider"></div>
         <div class="payment-box">
           <div class="font-bold" style="text-transform: uppercase; font-size: 9.5px; margin-bottom: 2px;">INFORMACIÓN DE PAGO:</div>
-          <div>Método: <b>${ticket.pagoDetalle.metodo.toUpperCase().replace('_', ' ')}</b></div>
+          <div>Método: <b>${ticket.pagoDetalle.metodo === 'tarjeta' ? 'TARJETA / PUNTO DE VENTA' : ticket.pagoDetalle.metodo.toUpperCase().replace('_', ' ')}</b></div>
           ${ticket.pagoDetalle.referencia_pago_movil ? `<div>Ref Pago Móvil: <b>${ticket.pagoDetalle.referencia_pago_movil}</b></div>` : ''}
           ${ticket.pagoDetalle.pago_movil_monto_bs ? `<div>Pago Móvil Bs: <b>Bs. ${ticket.pagoDetalle.pago_movil_monto_bs.toFixed(2)}</b></div>` : ''}
+          ${ticket.pagoDetalle.metodo === 'tarjeta' ? `
+            <div>Tipo Tarjeta: <b>${ticket.pagoDetalle.tarjeta_tipo === 'debito' ? 'Débito' : ticket.pagoDetalle.tarjeta_tipo === 'credito' ? 'Crédito' : 'Internacional'}</b></div>
+            ${ticket.pagoDetalle.tarjeta_banco ? `<div>Punto POS / Banco: <b>${ticket.pagoDetalle.tarjeta_banco}</b></div>` : ''}
+            ${ticket.pagoDetalle.tarjeta_referencia ? `<div>Ref / Aprobación: <b>${ticket.pagoDetalle.tarjeta_referencia}</b></div>` : ''}
+            ${ticket.pagoDetalle.tarjeta_lote ? `<div>Lote: <b>${ticket.pagoDetalle.tarjeta_lote}</b></div>` : ''}
+            <div>Monto Tarjeta: <b>Bs. ${(ticket.pagoDetalle.tarjeta_monto_bs || (ticket.totalUsd * ticket.tasa)).toFixed(2)}</b> (${formatUSD(ticket.totalUsd)})</div>
+          ` : ''}
           ${ticket.pagoDetalle.efectivo_usd_recibido ? `<div>Efectivo USD: <b>${formatUSD(ticket.pagoDetalle.efectivo_usd_recibido)}</b></div>` : ''}
           ${ticket.pagoDetalle.vuelto_usd ? `<div>Vuelto USD: <b>${formatUSD(ticket.pagoDetalle.vuelto_usd)}</b> (${formatBs(ticket.pagoDetalle.vuelto_usd, ticket.tasa)})</div>` : ''}
           ${ticket.pagoDetalle.efectivo_bs_recibido ? `<div>Efectivo Bs: <b>Bs. ${ticket.pagoDetalle.efectivo_bs_recibido.toFixed(2)}</b></div>` : ''}
           ${ticket.pagoDetalle.vuelto_bs ? `<div>Vuelto Bs: <b>Bs. ${ticket.pagoDetalle.vuelto_bs.toFixed(2)}</b></div>` : ''}
+          ${ticket.pagoDetalle.metodo === 'mixto' && ticket.pagoDetalle.tarjeta_monto_bs ? `
+            <div>• Tarjeta POS: <b>Bs. ${ticket.pagoDetalle.tarjeta_monto_bs.toFixed(2)}</b> (Ref: ${ticket.pagoDetalle.tarjeta_referencia || 'N/A'})</div>
+          ` : ''}
         </div>
 
         <div class="text-center" style="font-size: 9.5px; margin-top: 6px;">
+          (E) = Exento de IVA • (G) = Gravado 16%<br/>
           *** ¡GRACIAS POR SU COMPRA! ***
         </div>
       </body>
@@ -515,6 +598,22 @@ export const PosSimulator: React.FC<PosSimulatorProps> = ({
         efectivo_bs_recibido: valBsRecibido,
         vuelto_bs: vueltoBs,
       };
+    } else if (paymentMethod === 'tarjeta') {
+      if (!tarjetaReferencia.trim()) {
+        alert('Por favor ingresa el número de Referencia o Aprobación del punto de venta (voucher).');
+        return;
+      }
+      detallePago = {
+        metodo: 'tarjeta',
+        tarjeta_tipo: tarjetaTipo,
+        tarjeta_banco: tarjetaBanco,
+        tarjeta_referencia: tarjetaReferencia.trim(),
+        tarjeta_lote: tarjetaLote.trim() || undefined,
+        tarjeta_monto_bs: totalCartBs,
+        tarjeta_monto_usd: totalCartUsd,
+        monto_usd: totalCartUsd,
+        monto_bs: totalCartBs,
+      };
     } else {
       // Mixto
       if (mixtoTotalCubiertoUsd < totalCartUsd - 0.01) {
@@ -525,6 +624,10 @@ export const PosSimulator: React.FC<PosSimulatorProps> = ({
         alert('Ingresaste un monto de Pago Móvil en el cobro mixto; por favor indica la referencia.');
         return;
       }
+      if (mixtoTarjetaBsVal > 0 && !mixtoTarjetaRef.trim()) {
+        alert('Ingresaste un monto de Tarjeta / POS en el cobro mixto; por favor indica la referencia del voucher.');
+        return;
+      }
       detallePago = {
         metodo: 'mixto',
         monto_usd: totalCartUsd,
@@ -533,6 +636,10 @@ export const PosSimulator: React.FC<PosSimulatorProps> = ({
         efectivo_bs_recibido: mixtoBsVal,
         pago_movil_monto_bs: mixtoPmVal,
         referencia_pago_movil: mixtoPagoMovilRef.trim() || undefined,
+        tarjeta_monto_bs: mixtoTarjetaBsVal,
+        tarjeta_referencia: mixtoTarjetaRef.trim() || undefined,
+        tarjeta_tipo: mixtoTarjetaTipo,
+        tarjeta_banco: mixtoTarjetaBanco,
         vuelto_usd: Math.max(0, mixtoTotalCubiertoUsd - totalCartUsd),
         vuelto_bs: Math.max(0, (mixtoTotalCubiertoUsd - totalCartUsd) * empresaConfig.tasaCambio),
       };
@@ -559,6 +666,10 @@ export const PosSimulator: React.FC<PosSimulatorProps> = ({
       clienteNombre: selectedCliente.nombre,
       clienteRif: selectedCliente.rif,
       items: saleItems,
+      subtotalNeto: subtotalNetoCart,
+      baseImponible: baseImponibleCart,
+      montoExento: montoExentoCart,
+      montoIva: montoIvaCart,
       totalUsd: totalCartUsd,
       tasa: empresaConfig.tasaCambio,
       fecha: new Date().toLocaleString('es-VE'),
@@ -703,23 +814,54 @@ export const PosSimulator: React.FC<PosSimulatorProps> = ({
           </div>
         </div>
 
-        {/* Branch Selector */}
-        <div className="flex items-center gap-2 bg-slate-950 p-1.5 rounded-xl border border-slate-800 w-full md:w-auto">
-          <Store className="w-4 h-4 text-emerald-400 ml-2" />
-          <select
-            value={selectedSucursalId}
-            onChange={(e) => {
-              setSelectedSucursalId(Number(e.target.value));
-              setCart([]);
-            }}
-            className="bg-transparent text-xs text-white font-semibold py-1.5 pr-8 focus:outline-none cursor-pointer"
-          >
-            {sucursales.filter(s => s.tipo === 'tienda').map((suc) => (
-              <option key={suc.id} value={suc.id} className="bg-slate-900 text-white">
-                {suc.nombre} {currentUser?.sucursal_id === suc.id ? '★ (Tu Sucursal)' : ''}
-              </option>
-            ))}
-          </select>
+        {/* Action Controls: Fiscal Reports & Branch Selector */}
+        <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto">
+          {/* Quick Corte X / Z Button */}
+          <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800">
+            <button
+              type="button"
+              onClick={() => {
+                setFiscalModalTipo('X');
+                setShowFiscalModal(true);
+              }}
+              className="px-2.5 py-1 rounded-lg text-[11px] font-bold text-sky-400 hover:bg-sky-500/10 border border-transparent hover:border-sky-500/30 transition-all flex items-center gap-1.5 cursor-pointer"
+              title="Emitir Corte X (Parcial de Turno / Arqueo)"
+            >
+              <Receipt className="w-3.5 h-3.5" />
+              <span>Corte X</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setFiscalModalTipo('Z');
+                setShowFiscalModal(true);
+              }}
+              className="px-2.5 py-1 rounded-lg text-[11px] font-bold text-rose-400 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/30 transition-all flex items-center gap-1.5 cursor-pointer"
+              title="Emitir Corte Z (Cierre Fiscal Diario)"
+            >
+              <Lock className="w-3.5 h-3.5" />
+              <span>Corte Z</span>
+            </button>
+          </div>
+
+          {/* Branch Selector */}
+          <div className="flex items-center gap-2 bg-slate-950 p-1.5 rounded-xl border border-slate-800">
+            <Store className="w-4 h-4 text-emerald-400 ml-2" />
+            <select
+              value={selectedSucursalId}
+              onChange={(e) => {
+                setSelectedSucursalId(Number(e.target.value));
+                setCart([]);
+              }}
+              className="bg-transparent text-xs text-white font-semibold py-1.5 pr-8 focus:outline-none cursor-pointer"
+            >
+              {sucursales.filter(s => s.tipo === 'tienda').map((suc) => (
+                <option key={suc.id} value={suc.id} className="bg-slate-900 text-white">
+                  {suc.nombre} {currentUser?.sucursal_id === suc.id ? '★ (Tu Sucursal)' : ''}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
       </div>
 
@@ -734,12 +876,12 @@ export const PosSimulator: React.FC<PosSimulatorProps> = ({
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
         
         {/* ========================================================================= */}
         {/* LEFT 2/3 COLUMN: PRODUCT CATALOG & SCANNER & 4-COLUMN CARDS SORTED BY SALES */}
         {/* ========================================================================= */}
-        <div className="lg:col-span-2 space-y-4">
+        <div className="lg:col-span-7 xl:col-span-8 space-y-4">
           
           {/* Top Barcode Scanner & Search Bar */}
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-sm">
@@ -871,7 +1013,7 @@ export const PosSimulator: React.FC<PosSimulatorProps> = ({
                 </button>
               </div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 gap-3">
                 {sortedAndFilteredProductos.map((p, idx) => {
                   const inv = inventario.find((i) => i.sucursal_id === selectedSucursalId && i.producto_id === p.id);
                   const stock = inv ? inv.stock : 0;
@@ -892,9 +1034,20 @@ export const PosSimulator: React.FC<PosSimulatorProps> = ({
                     >
                       {/* Top Row: Category & Sales Count Tag */}
                       <div className="flex items-center justify-between gap-1.5 mb-2">
-                        <span className="text-[10px] bg-slate-950 px-2 py-0.5 rounded-md font-medium text-slate-400 border border-slate-800 truncate max-w-[90px]">
-                          {p.categoria || 'General'}
-                        </span>
+                        <div className="flex items-center gap-1">
+                          <span className="text-[10px] bg-slate-950 px-2 py-0.5 rounded-md font-medium text-slate-400 border border-slate-800 truncate max-w-[80px]">
+                            {p.categoria || 'General'}
+                          </span>
+                          {p.exento_iva ? (
+                            <span className="text-[9px] bg-amber-500/20 text-amber-300 font-bold px-1.5 py-0.5 rounded border border-amber-500/30 shrink-0" title="Producto Exento de IVA">
+                              EXENTO
+                            </span>
+                          ) : (
+                            <span className="text-[9px] bg-emerald-500/20 text-emerald-300 font-bold px-1.5 py-0.5 rounded border border-emerald-500/30 shrink-0" title="Producto Gravado con 16% IVA">
+                              IVA 16%
+                            </span>
+                          )}
+                        </div>
 
                         {salesStats.unitsSold > 0 ? (
                           <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-bold flex items-center gap-1 shrink-0 ${
@@ -966,7 +1119,7 @@ export const PosSimulator: React.FC<PosSimulatorProps> = ({
         {/* ========================================================================= */}
         {/* RIGHT 1/3 COLUMN: BILLING AREA (FACTURACIÓN, CLIENTE, TICKET & COBRO)     */}
         {/* ========================================================================= */}
-        <div className="lg:col-span-1 bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col justify-between space-y-4 shadow-md sticky top-4">
+        <div className="lg:col-span-5 xl:col-span-4 bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col justify-between space-y-4 shadow-md sticky top-4">
           <div className="space-y-3">
             
             {/* Top Bar: Title & Cashier */}
@@ -1108,46 +1261,80 @@ export const PosSimulator: React.FC<PosSimulatorProps> = ({
                 </div>
               ) : (
                 <div className="divide-y divide-slate-800/60 max-h-[220px] overflow-y-auto pr-1 bg-slate-950/50 rounded-xl border border-slate-800/80 p-1.5 custom-scrollbar">
-                  {cart.map((item) => (
-                    <div key={item.producto.id} className="py-2 px-1 flex items-center justify-between gap-2">
-                      <div className="flex-1 min-w-0">
-                        <h4 className="font-semibold text-slate-200 text-xs truncate">
-                          {item.producto.nombre}
-                        </h4>
-                        <p className="text-[10px] font-mono text-slate-400">
-                          {item.cantidad} x {formatUSD(item.producto.precio)} ={' '}
-                          <strong className="text-white">{formatUSD(item.producto.precio * item.cantidad)}</strong>
-                        </p>
-                      </div>
+                  {cart.map((item) => {
+                    const unit = item.producto.unidad_medida || 'UND';
+                    const isWeighed = unit === 'KG' || unit === 'L';
+                    const formattedQty = item.cantidad.toFixed(item.cantidad % 1 === 0 ? 0 : 3);
 
-                      <div className="flex items-center space-x-1.5 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => updateQuantity(item.producto.id, -1)}
-                          className="bg-slate-800 hover:bg-slate-700 text-slate-300 p-1 rounded-md text-xs cursor-pointer"
-                        >
-                          <Minus className="w-3 h-3" />
-                        </button>
-                        <span className="font-mono font-bold text-xs text-white w-5 text-center">
-                          {item.cantidad}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => updateQuantity(item.producto.id, 1)}
-                          className="bg-slate-800 hover:bg-slate-700 text-slate-300 p-1 rounded-md text-xs cursor-pointer"
-                        >
-                          <Plus className="w-3 h-3" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => removeItem(item.producto.id)}
-                          className="bg-rose-950/40 hover:bg-rose-900 text-rose-400 p-1 rounded-md text-xs cursor-pointer ml-1"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
+                    return (
+                      <div key={item.producto.id} className="py-2 px-1 flex items-center justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1">
+                            <h4 className="font-semibold text-slate-200 text-xs truncate">
+                              {item.producto.nombre}
+                            </h4>
+                            <span className="text-[8px] bg-slate-800 text-amber-300 font-bold px-1 rounded border border-slate-700 shrink-0">
+                              {unit}
+                            </span>
+                            {item.producto.exento_iva ? (
+                              <span className="text-[8px] bg-amber-500/20 text-amber-300 font-bold px-1 rounded border border-amber-500/30 shrink-0">
+                                (E)
+                              </span>
+                            ) : (
+                              <span className="text-[8px] bg-emerald-500/20 text-emerald-300 font-bold px-1 rounded border border-emerald-500/30 shrink-0">
+                                (16%)
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[10px] font-mono text-slate-400">
+                            {formattedQty} {unit} × {formatUSD(item.producto.precio)} ={' '}
+                            <strong className="text-white">{formatUSD(item.producto.precio * item.cantidad)}</strong>
+                          </p>
+                        </div>
+
+                        <div className="flex items-center space-x-1 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => updateQuantity(item.producto.id, -1)}
+                            className="bg-slate-800 hover:bg-slate-700 text-slate-300 p-1 rounded-md text-xs cursor-pointer"
+                            title={isWeighed ? 'Disminuir 0.25' : 'Disminuir 1'}
+                          >
+                            <Minus className="w-3 h-3" />
+                          </button>
+                          
+                          {/* Direct Decimal Quantity Input */}
+                          <input
+                            type="number"
+                            step="0.001"
+                            min="0.001"
+                            max={item.stockDisponible}
+                            value={item.cantidad}
+                            onChange={(e) => setDirectQuantity(item.producto.id, e.target.value)}
+                            className="w-14 bg-slate-900 border border-slate-700 text-emerald-400 font-mono font-bold text-xs text-center py-0.5 rounded focus:border-emerald-500 focus:outline-none"
+                            title={`Ingresa la cantidad o fracción en ${unit} (Disponible: ${item.stockDisponible})`}
+                          />
+
+                          <button
+                            type="button"
+                            onClick={() => updateQuantity(item.producto.id, 1)}
+                            className="bg-slate-800 hover:bg-slate-700 text-slate-300 p-1 rounded-md text-xs cursor-pointer"
+                            title={isWeighed ? 'Aumentar 0.25' : 'Aumentar 1'}
+                          >
+                            <Plus className="w-3 h-3" />
+                          </button>
+                          
+                          <button
+                            type="button"
+                            onClick={() => removeItem(item.producto.id)}
+                            className="bg-rose-950/40 hover:bg-rose-900 text-rose-400 p-1 rounded-md text-xs cursor-pointer ml-1"
+                            title="Eliminar artículo del ticket"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -1155,9 +1342,29 @@ export const PosSimulator: React.FC<PosSimulatorProps> = ({
 
           {/* Checkout Footer with Dual Total and Payment Trigger */}
           <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-2.5">
+            {/* Tax & Subtotal Discrimination */}
+            <div className="space-y-1 text-[11px] bg-slate-900/90 p-2.5 rounded-lg border border-slate-800 font-mono">
+              <div className="flex justify-between text-slate-400">
+                <span>Subtotal Neto:</span>
+                <span>{formatUSD(subtotalNetoCart)}</span>
+              </div>
+              <div className="flex justify-between text-slate-400">
+                <span>Base Imponible (16%):</span>
+                <span>{formatUSD(baseImponibleCart)}</span>
+              </div>
+              <div className="flex justify-between text-slate-400">
+                <span>Total Exento (0%):</span>
+                <span>{formatUSD(montoExentoCart)}</span>
+              </div>
+              <div className="flex justify-between text-emerald-400 font-semibold border-t border-slate-800 pt-1">
+                <span>IVA (16%):</span>
+                <span>+{formatUSD(montoIvaCart)}</span>
+              </div>
+            </div>
+
             <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
               <div>
-                <span className="text-slate-400 text-[11px] block font-semibold">Total a Cobrar:</span>
+                <span className="text-slate-300 text-xs block font-bold">Total a Cobrar:</span>
                 <span className="text-[10px] text-slate-500 font-mono">1$ = {formatBs(1, empresaConfig.tasaCambio)}</span>
               </div>
               <div className="text-right">
@@ -1446,62 +1653,96 @@ export const PosSimulator: React.FC<PosSimulatorProps> = ({
               </div>
             </div>
 
+            {/* Fiscal Breakdown Strip in Checkout */}
+            <div className="grid grid-cols-4 gap-2 bg-slate-950/90 border border-slate-800 p-2.5 rounded-xl font-mono text-[11px]">
+              <div>
+                <span className="text-[10px] text-slate-500 block">Subtotal Neto</span>
+                <span className="font-bold text-slate-300">{formatUSD(subtotalNetoCart)}</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-slate-500 block">Base Gravada (16%)</span>
+                <span className="font-bold text-slate-300">{formatUSD(baseImponibleCart)}</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-slate-500 block">Exento (0%)</span>
+                <span className="font-bold text-amber-300">{formatUSD(montoExentoCart)}</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-emerald-400 block">IVA (16%)</span>
+                <span className="font-bold text-emerald-400">+{formatUSD(montoIvaCart)}</span>
+              </div>
+            </div>
+
             {/* Payment Method Selector Tabs */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
               <button
                 type="button"
                 onClick={() => setPaymentMethod('pago_movil')}
-                className={`p-3 rounded-xl border text-center transition-all flex flex-col items-center gap-1.5 cursor-pointer ${
+                className={`p-2.5 rounded-xl border text-center transition-all flex flex-col items-center gap-1 cursor-pointer ${
                   paymentMethod === 'pago_movil'
                     ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300 font-bold shadow-lg shadow-emerald-950/40'
                     : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
                 }`}
               >
-                <Smartphone className="w-5 h-5" />
+                <Smartphone className="w-4 h-4 text-sky-400" />
                 <span className="text-xs">Pago Móvil</span>
-                <span className="text-[10px] font-mono text-slate-500">Bolívares</span>
+                <span className="text-[9px] font-mono text-slate-500">Bolívares</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setPaymentMethod('efectivo_usd')}
-                className={`p-3 rounded-xl border text-center transition-all flex flex-col items-center gap-1.5 cursor-pointer ${
+                className={`p-2.5 rounded-xl border text-center transition-all flex flex-col items-center gap-1 cursor-pointer ${
                   paymentMethod === 'efectivo_usd'
                     ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300 font-bold shadow-lg shadow-emerald-950/40'
                     : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
                 }`}
               >
-                <Banknote className="w-5 h-5" />
+                <Banknote className="w-4 h-4 text-emerald-400" />
                 <span className="text-xs">Efectivo ($)</span>
-                <span className="text-[10px] font-mono text-slate-500">Dólares USD</span>
+                <span className="text-[9px] font-mono text-slate-500">Dólares USD</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setPaymentMethod('efectivo_bs')}
-                className={`p-3 rounded-xl border text-center transition-all flex flex-col items-center gap-1.5 cursor-pointer ${
+                className={`p-2.5 rounded-xl border text-center transition-all flex flex-col items-center gap-1 cursor-pointer ${
                   paymentMethod === 'efectivo_bs'
                     ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300 font-bold shadow-lg shadow-emerald-950/40'
                     : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
                 }`}
               >
-                <Coins className="w-5 h-5" />
+                <Coins className="w-4 h-4 text-amber-400" />
                 <span className="text-xs">Efectivo (Bs)</span>
-                <span className="text-[10px] font-mono text-slate-500">Bolívares</span>
+                <span className="text-[9px] font-mono text-slate-500">Bolívares</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setPaymentMethod('tarjeta')}
+                className={`p-2.5 rounded-xl border text-center transition-all flex flex-col items-center gap-1 cursor-pointer ${
+                  paymentMethod === 'tarjeta'
+                    ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300 font-bold shadow-lg shadow-emerald-950/40'
+                    : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <CreditCard className="w-4 h-4 text-indigo-400" />
+                <span className="text-xs">Tarjeta / POS</span>
+                <span className="text-[9px] font-mono text-slate-500">Débito/Crédito</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setPaymentMethod('mixto')}
-                className={`p-3 rounded-xl border text-center transition-all flex flex-col items-center gap-1.5 cursor-pointer ${
+                className={`p-2.5 rounded-xl border text-center transition-all flex flex-col items-center gap-1 cursor-pointer ${
                   paymentMethod === 'mixto'
                     ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300 font-bold shadow-lg shadow-emerald-950/40'
                     : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
                 }`}
               >
-                <Layers className="w-5 h-5" />
+                <Layers className="w-4 h-4 text-purple-400" />
                 <span className="text-xs">Pago Mixto</span>
-                <span className="text-[10px] font-mono text-slate-500">Combinado</span>
+                <span className="text-[9px] font-mono text-slate-500">Combinado</span>
               </button>
             </div>
 
@@ -1742,7 +1983,126 @@ export const PosSimulator: React.FC<PosSimulatorProps> = ({
               </div>
             )}
 
-            {/* TAB CONTENT: 4. PAGO MIXTO */}
+            {/* TAB CONTENT: 4. TARJETA / PUNTO DE VENTA (POS) */}
+            {paymentMethod === 'tarjeta' && (
+              <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-4 animate-fade-in">
+                <div className="flex items-center justify-between bg-slate-900/90 p-3 rounded-xl border border-slate-800">
+                  <div>
+                    <span className="text-xs text-slate-400 block">Monto a procesar en el Punto de Venta:</span>
+                    <span className="text-lg font-mono font-bold text-emerald-400">
+                      {formatBs(totalCartUsd, empresaConfig.tasaCambio)}
+                    </span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-[11px] text-slate-500 font-mono">Equivalente USD:</span>
+                    <span className="text-xs font-mono font-bold text-white block">{formatUSD(totalCartUsd)}</span>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  {/* Card Type Selector */}
+                  <div>
+                    <label className="text-[11px] text-slate-400 font-semibold block mb-1.5">
+                      Tipo de Tarjeta / Instrumento:
+                    </label>
+                    <div className="grid grid-cols-3 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setTarjetaTipo('debito')}
+                        className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                          tarjetaTipo === 'debito'
+                            ? 'bg-indigo-500/20 border-indigo-500 text-indigo-300'
+                            : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        💳 Débito (Bs)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setTarjetaTipo('credito')}
+                        className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                          tarjetaTipo === 'credito'
+                            ? 'bg-indigo-500/20 border-indigo-500 text-indigo-300'
+                            : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        💳 Crédito (Bs)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setTarjetaTipo('internacional')}
+                        className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                          tarjetaTipo === 'internacional'
+                            ? 'bg-indigo-500/20 border-indigo-500 text-indigo-300'
+                            : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        🌐 Internacional ($)
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Terminal / POS Bank */}
+                  <div>
+                    <label className="text-[11px] text-slate-400 block mb-1">Terminal POS / Banco</label>
+                    <select
+                      value={tarjetaBanco}
+                      onChange={(e) => setTarjetaBanco(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-700 text-xs text-white px-3 py-2 rounded-xl focus:outline-none focus:border-emerald-500"
+                    >
+                      <option value="0134 - Banesco (Terminal POS #1)">0134 - Banesco (Terminal POS #1)</option>
+                      <option value="0102 - Banco de Venezuela (Biopago / POS #2)">0102 - Banco de Venezuela (Biopago / POS #2)</option>
+                      <option value="0105 - Banco Mercantil (Terminal POS #3)">0105 - Banco Mercantil (Terminal POS #3)</option>
+                      <option value="0172 - Bancamiga (POS Dual USD/Bs)">0172 - Bancamiga (POS Dual USD/Bs)</option>
+                      <option value="0108 - Banco Provincial (Terminal POS)">0108 - Banco Provincial (Terminal POS)</option>
+                      <option value="0114 - Bancaribe (Terminal POS)">0114 - Bancaribe (Terminal POS)</option>
+                      <option value="Punto Inalámbrico Multi-Banco">Punto Inalámbrico Multi-Banco</option>
+                    </select>
+                  </div>
+
+                  {/* Reference & Lot */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs font-bold text-white block mb-1.5">
+                        Número de Referencia / Aprobación *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={tarjetaReferencia}
+                        onChange={(e) => setTarjetaReferencia(e.target.value)}
+                        placeholder="Ej: 004821 (6 dígitos voucher)"
+                        className="w-full bg-slate-900 border border-slate-700 text-emerald-400 font-mono text-sm px-3.5 py-2.5 rounded-xl focus:border-emerald-500 focus:outline-none placeholder:text-slate-600"
+                        autoFocus
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[11px] text-slate-400 block mb-1.5">
+                        Número de Lote (Opcional)
+                      </label>
+                      <input
+                        type="text"
+                        value={tarjetaLote}
+                        onChange={(e) => setTarjetaLote(e.target.value)}
+                        placeholder="Ej: 00014"
+                        className="w-full bg-slate-900 border border-slate-700 text-slate-200 font-mono text-sm px-3.5 py-2.5 rounded-xl focus:border-emerald-500 focus:outline-none placeholder:text-slate-600"
+                      />
+                    </div>
+                  </div>
+
+                  {/* POS operational guidance */}
+                  <div className="bg-slate-900/60 p-3 rounded-xl text-[11px] text-slate-400 space-y-0.5 border border-slate-800/70 flex items-start gap-2">
+                    <CreditCard className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-semibold text-slate-300">Paso a paso en caja:</p>
+                      <p className="text-[10px] text-slate-400">Pasa o inserta la tarjeta en el terminal POS seleccionado. Una vez que el punto imprima el voucher aprobado, digita la referencia para cerrar el ticket fiscal.</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* TAB CONTENT: 5. PAGO MIXTO */}
             {paymentMethod === 'mixto' && (
               <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-3 animate-fade-in">
                 <div className="flex items-center justify-between bg-slate-900 p-2.5 rounded-xl text-xs">
@@ -1752,7 +2112,7 @@ export const PosSimulator: React.FC<PosSimulatorProps> = ({
                   </span>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 text-xs">
                   {/* Part 1: Cash USD */}
                   <div className="bg-slate-900/90 p-2.5 rounded-xl border border-slate-800 space-y-1">
                     <label className="text-[11px] font-bold text-slate-300 block">1. Efectivo USD ($)</label>
@@ -1788,9 +2148,30 @@ export const PosSimulator: React.FC<PosSimulatorProps> = ({
                     />
                   </div>
 
-                  {/* Part 3: Cash Bs */}
+                  {/* Part 3: Tarjeta POS Bs */}
                   <div className="bg-slate-900/90 p-2.5 rounded-xl border border-slate-800 space-y-1">
-                    <label className="text-[11px] font-bold text-slate-300 block">3. Efectivo Bs.</label>
+                    <label className="text-[11px] font-bold text-indigo-300 block">3. Tarjeta / POS (Bs.)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={mixtoTarjetaBs}
+                      onChange={(e) => setMixtoTarjetaBs(e.target.value)}
+                      placeholder="Bs. 0.00"
+                      className="w-full bg-slate-950 border border-slate-700 px-2 py-1.5 rounded-lg text-indigo-300 font-mono"
+                    />
+                    <input
+                      type="text"
+                      value={mixtoTarjetaRef}
+                      onChange={(e) => setMixtoTarjetaRef(e.target.value)}
+                      placeholder="Ref Voucher POS"
+                      className="w-full bg-slate-950 border border-slate-700 px-2 py-1 rounded text-[11px] text-white font-mono mt-1"
+                    />
+                  </div>
+
+                  {/* Part 4: Cash Bs */}
+                  <div className="bg-slate-900/90 p-2.5 rounded-xl border border-slate-800 space-y-1">
+                    <label className="text-[11px] font-bold text-slate-300 block">4. Efectivo Bs.</label>
                     <input
                       type="number"
                       step="0.01"
@@ -1895,23 +2276,56 @@ export const PosSimulator: React.FC<PosSimulatorProps> = ({
             {/* Receipt Items */}
             <div className="space-y-1.5 py-1 border-b border-dashed border-slate-300 text-[11px]">
               <div className="flex justify-between font-bold text-[10px] text-slate-600 border-b border-slate-200 pb-1">
-                <span>DESCRIPCIÓN</span>
-                <span>USD / BS</span>
+                <span>DESCRIPCIÓN DEL PRODUCTO</span>
+                <span>TOTAL</span>
               </div>
-              {lastCompletedTicket.items.map((it, idx) => (
-                <div key={idx} className="flex justify-between items-start gap-2">
-                  <div className="flex-1">
-                    <p className="font-semibold text-slate-800">{it.producto.nombre}</p>
-                    <p className="text-[10px] text-slate-500">
-                      {it.cantidad} x {formatUSD(it.producto.precio)}
-                    </p>
+              {lastCompletedTicket.items.map((it, idx) => {
+                const isExento = !!it.producto.exento_iva;
+                const cantFmt = it.cantidad % 1 === 0 ? it.cantidad : it.cantidad.toFixed(it.cantidad % 1 === 0 ? 0 : 2);
+                return (
+                  <div key={idx} className="flex justify-between items-baseline gap-2">
+                    <div className="flex-1 truncate pr-1">
+                      <span className="font-semibold text-slate-800">
+                        {it.producto.nombre}
+                      </span>
+                      {isExento && (
+                        <span className="text-[9px] font-bold text-amber-700 ml-1">
+                          (E)
+                        </span>
+                      )}
+                      <span className="text-[10px] text-slate-500 font-mono ml-1.5">
+                        {cantFmt} x {formatUSD(it.producto.precio)}
+                      </span>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <span className="font-bold text-slate-900 font-mono">{formatUSD(it.producto.precio * it.cantidad)}</span>
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <p className="font-bold text-slate-900">{formatUSD(it.producto.precio * it.cantidad)}</p>
-                    <p className="text-[10px] text-slate-600">{formatBs(it.producto.precio * it.cantidad, lastCompletedTicket.tasa)}</p>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
+            </div>
+
+            {/* Tax & Subtotal Discrimination Box in Receipt Modal */}
+            <div className="bg-slate-50 p-2 rounded-lg border border-slate-200 text-[10.5px] space-y-1">
+              <div className="font-bold text-[9.5px] text-slate-700 uppercase tracking-wider">
+                Discriminación Fiscal / IVA:
+              </div>
+              <div className="flex justify-between text-slate-600">
+                <span>Subtotal Neto:</span>
+                <span>{formatUSD(lastCompletedTicket.subtotalNeto)}</span>
+              </div>
+              <div className="flex justify-between text-slate-600">
+                <span>Base Imponible (16%):</span>
+                <span>{formatUSD(lastCompletedTicket.baseImponible)}</span>
+              </div>
+              <div className="flex justify-between text-slate-600">
+                <span>Monto Exento (0%):</span>
+                <span>{formatUSD(lastCompletedTicket.montoExento)}</span>
+              </div>
+              <div className="flex justify-between font-bold text-slate-900 border-t border-dashed border-slate-300 pt-1">
+                <span>IVA Liquidado (16%):</span>
+                <span>+{formatUSD(lastCompletedTicket.montoIva)}</span>
+              </div>
             </div>
 
             {/* Receipt Totals */}
@@ -1921,11 +2335,11 @@ export const PosSimulator: React.FC<PosSimulatorProps> = ({
                 <span className="font-bold">1$ = {formatBs(1, lastCompletedTicket.tasa)}</span>
               </div>
               <div className="flex justify-between text-sm font-bold text-slate-900 border-t border-slate-300 pt-1">
-                <span>TOTAL USD:</span>
+                <span>TOTAL FACTURA USD:</span>
                 <span>{formatUSD(lastCompletedTicket.totalUsd)}</span>
               </div>
               <div className="flex justify-between text-sm font-bold text-emerald-700">
-                <span>TOTAL BS:</span>
+                <span>TOTAL FACTURA BS:</span>
                 <span>{formatBs(lastCompletedTicket.totalUsd, lastCompletedTicket.tasa)}</span>
               </div>
             </div>
@@ -1964,6 +2378,22 @@ export const PosSimulator: React.FC<PosSimulatorProps> = ({
                   )}
                 </div>
               )}
+              {lastCompletedTicket.pagoDetalle.metodo === 'tarjeta' && (
+                <div>
+                  <p className="font-bold text-indigo-900">MÉTODO: TARJETA / PUNTO DE VENTA</p>
+                  <p className="text-slate-700">
+                    Tipo: <strong className="font-sans">{lastCompletedTicket.pagoDetalle.tarjeta_tipo === 'debito' ? 'Débito' : lastCompletedTicket.pagoDetalle.tarjeta_tipo === 'credito' ? 'Crédito' : 'Internacional'}</strong>
+                  </p>
+                  {lastCompletedTicket.pagoDetalle.tarjeta_banco && (
+                    <p className="text-slate-600">POS: {lastCompletedTicket.pagoDetalle.tarjeta_banco}</p>
+                  )}
+                  <p className="text-slate-700">Ref / Aprob: <strong className="font-mono">{lastCompletedTicket.pagoDetalle.tarjeta_referencia}</strong></p>
+                  {lastCompletedTicket.pagoDetalle.tarjeta_lote && (
+                    <p className="text-slate-600">Lote: <span className="font-mono">{lastCompletedTicket.pagoDetalle.tarjeta_lote}</span></p>
+                  )}
+                  <p className="text-slate-700 font-mono">Monto: {formatBs(lastCompletedTicket.totalUsd, lastCompletedTicket.tasa)}</p>
+                </div>
+              )}
               {lastCompletedTicket.pagoDetalle.metodo === 'mixto' && (
                 <div className="space-y-0.5">
                   <p className="font-bold text-slate-900">MÉTODO: PAGO MIXTO</p>
@@ -1974,6 +2404,12 @@ export const PosSimulator: React.FC<PosSimulatorProps> = ({
                     <p className="text-slate-700">
                       • Pago Móvil: Bs. {(lastCompletedTicket.pagoDetalle.pago_movil_monto_bs || 0).toFixed(2)}{' '}
                       {lastCompletedTicket.pagoDetalle.referencia_pago_movil && `(Ref: ${lastCompletedTicket.pagoDetalle.referencia_pago_movil})`}
+                    </p>
+                  )}
+                  {(lastCompletedTicket.pagoDetalle.tarjeta_monto_bs || 0) > 0 && (
+                    <p className="text-slate-700">
+                      • Tarjeta POS: Bs. {(lastCompletedTicket.pagoDetalle.tarjeta_monto_bs || 0).toFixed(2)}{' '}
+                      {lastCompletedTicket.pagoDetalle.tarjeta_referencia && `(Ref: ${lastCompletedTicket.pagoDetalle.tarjeta_referencia})`}
                     </p>
                   )}
                   {(lastCompletedTicket.pagoDetalle.efectivo_bs_recibido || 0) > 0 && (
@@ -2001,6 +2437,56 @@ export const PosSimulator: React.FC<PosSimulatorProps> = ({
                 className="bg-slate-200 text-slate-800 hover:bg-slate-300 py-2.5 px-4 rounded-xl font-sans font-bold text-xs cursor-pointer"
               >
                 Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* FISCAL REPORT MODAL (CORTE X / CORTE Z) */}
+      {showFiscalModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-950/85 backdrop-blur-sm overflow-y-auto animate-fade-in">
+          <div className="bg-slate-900 border border-slate-800 text-slate-100 rounded-3xl max-w-5xl w-full p-4 sm:p-7 shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2.5 bg-emerald-500/20 text-emerald-400 rounded-xl border border-emerald-500/30">
+                  <Receipt className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-white text-base">
+                    Módulo de Auditoría Fiscal y Arqueo de Caja
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Sucursal activa: <strong className="text-emerald-400">{tiendaActual.nombre}</strong> • Cajero: <strong className="text-slate-200">{currentUser?.nombre_completo}</strong>
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowFiscalModal(false)}
+                className="p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 transition-all cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <FiscalCortesView
+              ventas={ventas}
+              sucursales={sucursales}
+              empresaConfig={empresaConfig}
+              usuarios={currentUser ? [currentUser] : []}
+              currentUser={currentUser}
+              defaultTipo={fiscalModalTipo}
+              initialBranchId={selectedSucursalId}
+            />
+
+            <div className="flex justify-end pt-3 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => setShowFiscalModal(false)}
+                className="bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs px-5 py-2.5 rounded-xl cursor-pointer"
+              >
+                Volver al Punto de Venta
               </button>
             </div>
           </div>

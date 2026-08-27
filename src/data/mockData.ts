@@ -213,11 +213,11 @@ export const INITIAL_CXP: CuentaPorPagar[] = [
 
 
 export const INITIAL_PRODUCTOS: Producto[] = [
-  { id: 1, codigo_barras: '123456', nombre: 'Arroz Integral 1kg', precio: 2.50, costo: 1.80 },
-  { id: 2, codigo_barras: '789012', nombre: 'Aceite Vegetal 1L', precio: 4.80, costo: 3.50 },
-  { id: 3, codigo_barras: '345678', nombre: 'Harina de Trigo 1kg', precio: 1.75, costo: 1.20 },
-  { id: 4, codigo_barras: '901234', nombre: 'Café Molido Premium 500g', precio: 6.20, costo: 4.50 },
-  { id: 5, codigo_barras: '567890', nombre: 'Detergente Líquido 2L', precio: 5.90, costo: 4.10 },
+  { id: 1, codigo_barras: '123456', nombre: 'Arroz Integral 1kg', precio: 2.50, costo: 1.80, unidad_medida: 'KG', exento_iva: true },
+  { id: 2, codigo_barras: '789012', nombre: 'Aceite Vegetal 1L', precio: 4.80, costo: 3.50, unidad_medida: 'L', exento_iva: false },
+  { id: 3, codigo_barras: '345678', nombre: 'Harina de Trigo 1kg', precio: 1.75, costo: 1.20, unidad_medida: 'KG', exento_iva: true },
+  { id: 4, codigo_barras: '901234', nombre: 'Café Molido Premium 500g', precio: 6.20, costo: 4.50, unidad_medida: 'UND', exento_iva: false },
+  { id: 5, codigo_barras: '567890', nombre: 'Detergente Líquido 2L', precio: 5.90, costo: 4.10, unidad_medida: 'L', exento_iva: false },
 ];
 
 export const INITIAL_INVENTARIO: InventarioItem[] = [
@@ -244,28 +244,149 @@ export const INITIAL_INVENTARIO: InventarioItem[] = [
 ];
 
 export const INITIAL_VENTAS: Venta[] = [
+  // Tienda 1 - Centro (Ana Morales)
   {
     id: 1,
     sucursal_id: 1,
     usuario_id: 1,
     usuario_nombre: 'Ana Morales',
-    fecha: new Date(Date.now() - 3600000 * 2).toISOString(),
-    total: 12.30,
+    cliente_id: 1,
+    cliente_nombre: 'Abastos y Víveres La Candelaria C.A.',
+    cliente_rif: 'J-31049281-9',
+    fecha: new Date(Date.now() - 3600000 * 6).toISOString(),
+    subtotal_neto: 24.15,
+    base_imponible: 9.35,
+    monto_exento: 14.80,
+    monto_iva: 1.50,
+    total: 25.65,
+    metodo_pago: 'pago_movil',
+    referencia_pago: 'PM-883921',
+    pago_detalle: {
+      metodo: 'pago_movil',
+      monto_usd: 25.65,
+      monto_bs: 25.65 * 45.50,
+      pago_movil_monto_bs: 25.65 * 45.50,
+      referencia_pago_movil: 'PM-883921'
+    },
     detalles: [
-      { id: 1, venta_id: 1, producto_id: 1, producto_nombre: 'Arroz Integral 1kg', cantidad: 2, precio_unitario: 2.50, subtotal: 5.00 },
-      { id: 2, venta_id: 1, producto_id: 3, producto_nombre: 'Harina de Trigo 1kg', cantidad: 2, precio_unitario: 1.75, subtotal: 3.50 },
-      { id: 3, venta_id: 1, producto_id: 2, producto_nombre: 'Aceite Vegetal 1L', cantidad: 1, precio_unitario: 3.80, subtotal: 3.80 }
+      { id: 1, venta_id: 1, producto_id: 1, producto_nombre: 'Arroz Integral 1kg', cantidad: 4, precio_unitario: 2.50, subtotal: 10.00, exento_iva: true },
+      { id: 2, venta_id: 1, producto_id: 3, producto_nombre: 'Harina de Trigo 1kg', cantidad: 4, precio_unitario: 1.75, subtotal: 7.00, exento_iva: true },
+      { id: 3, venta_id: 1, producto_id: 2, producto_nombre: 'Aceite Vegetal 1L', cantidad: 2, precio_unitario: 4.80, subtotal: 9.60, exento_iva: false }
     ]
   },
   {
     id: 2,
+    sucursal_id: 1,
+    usuario_id: 1,
+    usuario_nombre: 'Ana Morales',
+    cliente_id: 2,
+    cliente_nombre: 'Inversiones El Sol Radiante F.P.',
+    cliente_rif: 'V-14920381-0',
+    fecha: new Date(Date.now() - 3600000 * 4).toISOString(),
+    subtotal_neto: 31.20,
+    base_imponible: 21.00,
+    monto_exento: 10.20,
+    monto_iva: 3.36,
+    total: 34.56,
+    metodo_pago: 'efectivo_usd',
+    pago_detalle: {
+      metodo: 'efectivo_usd',
+      monto_usd: 34.56,
+      monto_bs: 34.56 * 45.50,
+      efectivo_usd_recibido: 40.00,
+      vuelto_usd: 5.44
+    },
+    detalles: [
+      { id: 4, venta_id: 2, producto_id: 4, producto_nombre: 'Café Molido Premium 500g', cantidad: 3, precio_unitario: 6.20, subtotal: 18.60, exento_iva: false },
+      { id: 5, venta_id: 2, producto_id: 5, producto_nombre: 'Detergente Líquido 2L', cantidad: 1, precio_unitario: 5.90, subtotal: 5.90, exento_iva: false },
+      { id: 6, venta_id: 2, producto_id: 1, producto_nombre: 'Arroz Integral 1kg', cantidad: 4, precio_unitario: 2.50, subtotal: 10.00, exento_iva: true }
+    ]
+  },
+  {
+    id: 3,
+    sucursal_id: 1,
+    usuario_id: 1,
+    usuario_nombre: 'Ana Morales',
+    cliente_nombre: 'Cliente Contado / Consumidor Final',
+    cliente_rif: 'V-00000000-0',
+    fecha: new Date(Date.now() - 3600000 * 1).toISOString(),
+    subtotal_neto: 18.00,
+    base_imponible: 18.00,
+    monto_exento: 0.00,
+    monto_iva: 2.88,
+    total: 20.88,
+    metodo_pago: 'tarjeta',
+    referencia_pago: 'POS-009142',
+    pago_detalle: {
+      metodo: 'tarjeta',
+      monto_usd: 20.88,
+      monto_bs: 20.88 * 45.50,
+      tarjeta_banco: '0134 - Banesco (Terminal #1)',
+      tarjeta_referencia: 'POS-009142',
+      tarjeta_monto_bs: 20.88 * 45.50,
+      tarjeta_monto_usd: 20.88,
+      tarjeta_tipo: 'debito'
+    },
+    detalles: [
+      { id: 7, venta_id: 3, producto_id: 4, producto_nombre: 'Café Molido Premium 500g', cantidad: 2, precio_unitario: 6.20, subtotal: 12.40, exento_iva: false },
+      { id: 8, venta_id: 3, producto_id: 2, producto_nombre: 'Aceite Vegetal 1L', cantidad: 1, precio_unitario: 4.80, subtotal: 4.80, exento_iva: false }
+    ]
+  },
+
+  // Tienda 2 - Norte (Fernando Soto)
+  {
+    id: 4,
     sucursal_id: 2,
     usuario_id: 5,
     usuario_nombre: 'Fernando Soto',
+    cliente_id: 3,
+    cliente_nombre: 'Supermercado Central Guayana S.A.',
+    cliente_rif: 'J-40918273-4',
     fecha: new Date(Date.now() - 3600000 * 5).toISOString(),
-    total: 12.40,
+    subtotal_neto: 42.50,
+    base_imponible: 25.00,
+    monto_exento: 17.50,
+    monto_iva: 4.00,
+    total: 46.50,
+    metodo_pago: 'mixto',
+    pago_detalle: {
+      metodo: 'mixto',
+      monto_usd: 46.50,
+      monto_bs: 46.50 * 45.50,
+      efectivo_usd_recibido: 20.00,
+      pago_movil_monto_bs: 26.50 * 45.50,
+      referencia_pago_movil: 'PM-990142',
+      vuelto_usd: 0
+    },
     detalles: [
-      { id: 4, venta_id: 2, producto_id: 4, producto_nombre: 'Café Molido Premium 500g', cantidad: 2, precio_unitario: 6.20, subtotal: 12.40 }
+      { id: 9, venta_id: 4, producto_id: 1, producto_nombre: 'Arroz Integral 1kg', cantidad: 7, precio_unitario: 2.50, subtotal: 17.50, exento_iva: true },
+      { id: 10, venta_id: 4, producto_id: 5, producto_nombre: 'Detergente Líquido 2L', cantidad: 3, precio_unitario: 5.90, subtotal: 17.70, exento_iva: false },
+      { id: 11, venta_id: 4, producto_id: 2, producto_nombre: 'Aceite Vegetal 1L', cantidad: 2, precio_unitario: 4.80, subtotal: 9.60, exento_iva: false }
+    ]
+  },
+  {
+    id: 5,
+    sucursal_id: 2,
+    usuario_id: 5,
+    usuario_nombre: 'Fernando Soto',
+    cliente_nombre: 'Carlos Alberto Rondón',
+    cliente_rif: 'V-18294012-3',
+    fecha: new Date(Date.now() - 3600000 * 2).toISOString(),
+    subtotal_neto: 18.60,
+    base_imponible: 18.60,
+    monto_exento: 0.00,
+    monto_iva: 2.98,
+    total: 21.58,
+    metodo_pago: 'efectivo_usd',
+    pago_detalle: {
+      metodo: 'efectivo_usd',
+      monto_usd: 21.58,
+      monto_bs: 21.58 * 45.50,
+      efectivo_usd_recibido: 30.00,
+      vuelto_usd: 8.42
+    },
+    detalles: [
+      { id: 12, venta_id: 5, producto_id: 4, producto_nombre: 'Café Molido Premium 500g', cantidad: 3, precio_unitario: 6.20, subtotal: 18.60, exento_iva: false }
     ]
   }
 ];

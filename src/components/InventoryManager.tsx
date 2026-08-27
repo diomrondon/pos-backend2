@@ -26,7 +26,7 @@ interface InventoryManagerProps {
   currentUser: Usuario | null;
   empresaConfig: EmpresaConfig;
   onTransferStock: (origenId: number, destinoId: number, productoId: number, cantidad: number) => boolean;
-  onAddProduct: (codigoBarras: string, nombre: string, precio: number, costo: number, stockOficina: number) => void;
+  onAddProduct: (codigoBarras: string, nombre: string, precio: number, costo: number, stockOficina: number, exentoIva?: boolean) => void;
   onUpdateProduct: (updated: Producto) => void;
   onDeleteProduct: (productId: number) => void;
 }
@@ -56,6 +56,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
   const [newCosto, setNewCosto] = useState<string>('');
   const [newPrecio, setNewPrecio] = useState<string>('');
   const [newStockOficina, setNewStockOficina] = useState<string>('100');
+  const [newExentoIva, setNewExentoIva] = useState<boolean>(false);
 
   // Modal State: Edit Product
   const [editingProduct, setEditingProduct] = useState<Producto | null>(null);
@@ -63,6 +64,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
   const [editNombre, setEditNombre] = useState<string>('');
   const [editCosto, setEditCosto] = useState<string>('');
   const [editPrecio, setEditPrecio] = useState<string>('');
+  const [editExentoIva, setEditExentoIva] = useState<boolean>(false);
 
   // Modal State: Delete Confirmation
   const [deletingProduct, setDeletingProduct] = useState<Producto | null>(null);
@@ -177,6 +179,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
     setNewCosto('');
     setNewPrecio('');
     setNewStockOficina('100');
+    setNewExentoIva(false);
     setShowNewProdModal(true);
   };
 
@@ -200,7 +203,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
 
     const stockOficina = parseInt(newStockOficina) || 0;
 
-    onAddProduct(newCodigo.trim(), newNombre.trim(), precio, costo, stockOficina);
+    onAddProduct(newCodigo.trim(), newNombre.trim(), precio, costo, stockOficina, newExentoIva);
     setShowNewProdModal(false);
   };
 
@@ -215,6 +218,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
     setEditNombre(product.nombre);
     setEditCosto(product.costo !== undefined ? product.costo.toString() : (product.precio * 0.7).toFixed(2));
     setEditPrecio(product.precio.toString());
+    setEditExentoIva(!!product.exento_iva);
   };
 
   const handleSaveEditProduct = (e: React.FormEvent) => {
@@ -243,6 +247,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
       nombre: editNombre.trim(),
       precio,
       costo,
+      exento_iva: editExentoIva,
     });
 
     setEditingProduct(null);
@@ -396,6 +401,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
               <tr>
                 <th className="p-3">Código</th>
                 <th className="p-3">Artículo / Descripción</th>
+                <th className="p-3 text-center">Régimen IVA</th>
                 <th className="p-3 text-right">Costo Unit.</th>
                 <th className="p-3 text-right">Precio Venta</th>
                 <th className="p-3 text-right">Margen</th>
@@ -409,7 +415,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
             <tbody className="divide-y divide-slate-800/60 font-sans">
               {filteredProducts.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="p-8 text-center text-slate-500 text-xs">
+                  <td colSpan={11} className="p-8 text-center text-slate-500 text-xs">
                     No se encontraron artículos con el término de búsqueda "{searchTerm}".
                   </td>
                 </tr>
@@ -423,6 +429,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
                   const cost = prod.costo ?? +(prod.precio * 0.7).toFixed(2);
                   const marginUSD = prod.precio - cost;
                   const marginPct = prod.precio > 0 ? (marginUSD / prod.precio) * 100 : 0;
+                  const isExento = !!prod.exento_iva;
 
                   return (
                     <tr key={prod.id} className="hover:bg-slate-800/40 transition-colors">
@@ -433,6 +440,19 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
                       <td className="p-3 font-bold text-white">
                         <div>{prod.nombre}</div>
                         <div className="text-[10px] text-slate-500 font-normal">ID #{prod.id}</div>
+                      </td>
+
+                      {/* IVA / Exento */}
+                      <td className="p-3 text-center">
+                        {isExento ? (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10.5px] font-mono font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                            EXENTO (0%)
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10.5px] font-mono font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                            GRAVADO (16%)
+                          </span>
+                        )}
                       </td>
 
                       {/* Costo */}
@@ -723,6 +743,35 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
                 </div>
               )}
 
+              {/* Régimen IVA Selection */}
+              <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-3.5 space-y-2">
+                <label className="block text-slate-300 font-semibold text-xs mb-1 flex items-center justify-between">
+                  <span>Tratamiento Tributario / IVA</span>
+                  {newExentoIva ? (
+                    <span className="text-[10px] font-mono px-2 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-500/40 rounded font-bold">
+                      EXENTO (0% IVA)
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-mono px-2 py-0.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 rounded font-bold">
+                      GRAVADO (16% IVA)
+                    </span>
+                  )}
+                </label>
+                <div className="flex items-center gap-3 bg-slate-900/80 p-2.5 rounded-lg border border-slate-800 hover:border-slate-700 transition-colors cursor-pointer" onClick={() => setNewExentoIva(!newExentoIva)}>
+                  <input
+                    type="checkbox"
+                    id="new-exento-checkbox"
+                    checked={newExentoIva}
+                    onChange={(e) => setNewExentoIva(e.target.checked)}
+                    className="w-4 h-4 rounded text-amber-500 bg-slate-950 border-slate-700 focus:ring-amber-500 cursor-pointer"
+                  />
+                  <label htmlFor="new-exento-checkbox" className="text-xs text-slate-300 cursor-pointer select-none">
+                    <span className="font-bold text-white block">Artículo Exento de IVA (Tasa 0%)</span>
+                    <span className="text-[11px] text-slate-400">Marque esta casilla si el artículo pertenece a la canasta básica o está libre de IVA por normativa. Si se desmarca, se cobrará el 16% de IVA al facturar.</span>
+                  </label>
+                </div>
+              </div>
+
               <div>
                 <label className="block text-slate-400 mb-1 font-semibold">Stock Inicial en Bodega Central</label>
                 <input
@@ -849,6 +898,35 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
                   </div>
                 </div>
               )}
+
+              {/* Régimen IVA Selection */}
+              <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-3.5 space-y-2">
+                <label className="block text-slate-300 font-semibold text-xs mb-1 flex items-center justify-between">
+                  <span>Tratamiento Tributario / IVA</span>
+                  {editExentoIva ? (
+                    <span className="text-[10px] font-mono px-2 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-500/40 rounded font-bold">
+                      EXENTO (0% IVA)
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-mono px-2 py-0.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 rounded font-bold">
+                      GRAVADO (16% IVA)
+                    </span>
+                  )}
+                </label>
+                <div className="flex items-center gap-3 bg-slate-900/80 p-2.5 rounded-lg border border-slate-800 hover:border-slate-700 transition-colors cursor-pointer" onClick={() => setEditExentoIva(!editExentoIva)}>
+                  <input
+                    type="checkbox"
+                    id="edit-exento-checkbox"
+                    checked={editExentoIva}
+                    onChange={(e) => setEditExentoIva(e.target.checked)}
+                    className="w-4 h-4 rounded text-amber-500 bg-slate-950 border-slate-700 focus:ring-amber-500 cursor-pointer"
+                  />
+                  <label htmlFor="edit-exento-checkbox" className="text-xs text-slate-300 cursor-pointer select-none">
+                    <span className="font-bold text-white block">Artículo Exento de IVA (Tasa 0%)</span>
+                    <span className="text-[11px] text-slate-400">Marque esta casilla si el artículo pertenece a la canasta básica o está libre de IVA por normativa. Si se desmarca, se cobrará el 16% de IVA al facturar.</span>
+                  </label>
+                </div>
+              </div>
 
               <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
                 <button

@@ -12,8 +12,17 @@ import {
   Receipt,
   FileText,
   Search,
+  Barcode,
+  Scale,
+  Trash2,
+  Eye,
+  X,
+  PlusCircle,
+  Tag,
+  ArrowRight,
+  Hash,
 } from 'lucide-react';
-import { Compra, Proveedor, Producto, Sucursal, EmpresaConfig, Usuario } from '../types';
+import { Compra, Proveedor, Producto, Sucursal, EmpresaConfig, Usuario, DetalleCompra } from '../types';
 import { formatUSD, formatBs, formatDual } from '../lib/currency';
 
 interface ComprasManagerProps {
@@ -23,7 +32,7 @@ interface ComprasManagerProps {
   sucursales: Sucursal[];
   empresaConfig: EmpresaConfig;
   currentUser: Usuario | null;
-  onRegistrarCompra: (compra: Omit<Compra, 'id'>) => void;
+  onRegistrarCompra: (compra: Omit<Compra, 'id'>, newProducts?: Producto[]) => void;
 }
 
 export const ComprasManager: React.FC<ComprasManagerProps> = ({
@@ -36,50 +45,175 @@ export const ComprasManager: React.FC<ComprasManagerProps> = ({
   onRegistrarCompra,
 }) => {
   const [showNewModal, setShowNewModal] = useState(false);
+  const [selectedCompraDetail, setSelectedCompraDetail] = useState<Compra | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
 
-  // New Purchase Form State
+  // New Purchase Invoice Form State
   const [proveedorId, setProveedorId] = useState<number>(proveedores[0]?.id || 1);
-  const [sucursalDestinoId, setSucursalDestinoId] = useState<number>(3); // Default to Central Warehouse
+  const [sucursalDestinoId, setSucursalDestinoId] = useState<number>(3); // Default to Central Warehouse/Store
   const [numeroFactura, setNumeroFactura] = useState('');
-  const [itemsCompra, setItemsCompra] = useState<
-    { productoId: number; productoNombre: string; cantidad: number; costoUnitario: number; subtotal: number }[]
-  >([]);
+  const [numeroControl, setNumeroControl] = useState('');
+  const [fechaFactura, setFechaFactura] = useState(new Date().toISOString().split('T')[0]);
+  const [fechaVencimiento, setFechaVencimiento] = useState(
+    new Date(Date.now() + 15 * 24 * 3600 * 1000).toISOString().split('T')[0]
+  );
+  const [condicionPago, setCondicionPago] = useState<'credito' | 'contado'>('credito');
 
-  // Item selector in form
-  const [selectedProdId, setSelectedProdId] = useState<number>(productos[0]?.id || 1);
-  const [cantidadInput, setCantidadInput] = useState<number>(10);
-  const [costoInput, setCostoInput] = useState<number>(1.5);
+  // Invoiced line items
+  const [itemsCompra, setItemsCompra] = useState<DetalleCompra[]>([]);
+  const [newlyCreatedProducts, setNewlyCreatedProducts] = useState<Producto[]>([]);
 
-  const handleAddItem = () => {
-    const prod = productos.find((p) => p.id === selectedProdId);
-    if (!prod) return;
+  // Item input row state
+  const [selectedProdId, setSelectedProdId] = useState<number | 'new'>(productos[0]?.id || 'new');
+  const [barcodeInput, setBarcodeInput] = useState<string>(productos[0]?.codigo_barras || '');
+  const [productNameInput, setProductNameInput] = useState<string>(productos[0]?.nombre || '');
+  const [unidadMedidaInput, setUnidadMedidaInput] = useState<'UND' | 'KG' | 'L' | 'PQ' | string>(
+    productos[0]?.unidad_medida || 'UND'
+  );
+  const [cantidadInput, setCantidadInput] = useState<string>('1');
+  const [costoInput, setCostoInput] = useState<string>(productos[0]?.costo ? String(productos[0].costo) : '1.00');
+  const [pvpInput, setPvpInput] = useState<string>(productos[0]?.precio ? String(productos[0].precio) : '1.50');
+  const [itemExentoInput, setItemExentoInput] = useState<boolean>(
+    productos[0] ? !!productos[0].exento_iva : false
+  );
 
-    if (cantidadInput <= 0 || costoInput <= 0) {
-      alert('Ingresa una cantidad y costo unitario válidos.');
+  // When user selects an existing product from dropdown
+  const handleProductSelect = (idVal: string) => {
+    if (idVal === 'new') {
+      setSelectedProdId('new');
+      setBarcodeInput('');
+      setProductNameInput('');
+      setUnidadMedidaInput('UND');
+      setCantidadInput('1');
+      setCostoInput('1.00');
+      setPvpInput('1.50');
+      setItemExentoInput(false);
       return;
     }
 
-    const subtotal = cantidadInput * costoInput;
-    const existingIndex = itemsCompra.findIndex((i) => i.productoId === prod.id);
+    const id = Number(idVal);
+    setSelectedProdId(id);
+    const prod = productos.find((p) => p.id === id);
+    if (prod) {
+      setBarcodeInput(prod.codigo_barras || '');
+      setProductNameInput(prod.nombre);
+      setUnidadMedidaInput(prod.unidad_medida || 'UND');
+      setItemExentoInput(!!prod.exento_iva);
+      setCostoInput(prod.costo ? String(prod.costo) : '1.00');
+      setPvpInput(String(prod.precio));
+    }
+  };
+
+  // When user scans or types barcode
+  const handleBarcodeChange = (code: string) => {
+    setBarcodeInput(code);
+    const trimmed = code.trim();
+    if (!trimmed) return;
+
+    const match = productos.find(
+      (p) => p.codigo_barras.toLowerCase() === trimmed.toLowerCase()
+    );
+    if (match) {
+      setSelectedProdId(match.id);
+      setProductNameInput(match.nombre);
+      setUnidadMedidaInput(match.unidad_medida || 'UND');
+      setItemExentoInput(!!match.exento_iva);
+      if (match.costo) setCostoInput(String(match.costo));
+      setPvpInput(String(match.precio));
+    }
+  };
+
+  const handleAddItemToInvoice = () => {
+    const qty = parseFloat(cantidadInput);
+    const cost = parseFloat(costoInput);
+    const pvp = parseFloat(pvpInput) || +(cost * 1.3).toFixed(2);
+
+    if (isNaN(qty) || qty <= 0) {
+      alert('Por favor ingresa una cantidad válida mayor a cero (admite fracciones como 0.500, 1.250).');
+      return;
+    }
+
+    if (isNaN(cost) || cost <= 0) {
+      alert('Por favor ingresa un costo unitario válido mayor a cero.');
+      return;
+    }
+
+    const trimmedName = productNameInput.trim();
+    if (!trimmedName) {
+      alert('Debes indicar la descripción o nombre del producto facturado.');
+      return;
+    }
+
+    let prodId: number;
+    const barcodeTrimmed = barcodeInput.trim() || `SKU-${Date.now().toString().slice(-6)}`;
+
+    if (selectedProdId === 'new') {
+      // Find if already exists by barcode
+      const existing = productos.find((p) => p.codigo_barras === barcodeTrimmed);
+      if (existing) {
+        prodId = existing.id;
+      } else {
+        prodId = Date.now();
+        const newProductObj: Producto = {
+          id: prodId,
+          codigo_barras: barcodeTrimmed,
+          nombre: trimmedName,
+          precio: pvp,
+          costo: cost,
+          unidad_medida: unidadMedidaInput,
+          exento_iva: itemExentoInput,
+        };
+        setNewlyCreatedProducts((prev) => [...prev, newProductObj]);
+      }
+    } else {
+      prodId = selectedProdId;
+    }
+
+    const subtotal = +(qty * cost).toFixed(2);
+    const ivaItem = itemExentoInput ? 0 : +(subtotal * 0.16).toFixed(2);
+
+    const existingIndex = itemsCompra.findIndex(
+      (i) => i.productoId === prodId || (i.codigo_barras && i.codigo_barras === barcodeTrimmed)
+    );
 
     if (existingIndex >= 0) {
       const updated = [...itemsCompra];
-      updated[existingIndex].cantidad += cantidadInput;
-      updated[existingIndex].costoUnitario = costoInput;
-      updated[existingIndex].subtotal = updated[existingIndex].cantidad * costoInput;
+      const newQty = +(updated[existingIndex].cantidad + qty).toFixed(3);
+      const newSubtotal = +(newQty * cost).toFixed(2);
+      updated[existingIndex] = {
+        ...updated[existingIndex],
+        cantidad: newQty,
+        costoUnitario: cost,
+        precioVenta: pvp,
+        unidad_medida: unidadMedidaInput,
+        exentoIva: itemExentoInput,
+        subtotal: newSubtotal,
+        montoIva: itemExentoInput ? 0 : +(newSubtotal * 0.16).toFixed(2),
+      };
       setItemsCompra(updated);
     } else {
       setItemsCompra([
         ...itemsCompra,
         {
-          productoId: prod.id,
-          productoNombre: prod.nombre,
-          cantidad: cantidadInput,
-          costoUnitario: costoInput,
+          productoId: prodId,
+          productoNombre: trimmedName,
+          codigo_barras: barcodeTrimmed,
+          unidad_medida: unidadMedidaInput,
+          cantidad: qty,
+          costoUnitario: cost,
+          precioVenta: pvp,
           subtotal,
+          exentoIva: itemExentoInput,
+          montoIva: ivaItem,
         },
       ]);
+    }
+
+    // Reset line fields for next item
+    setCantidadInput('1');
+    if (selectedProdId === 'new') {
+      setBarcodeInput('');
+      setProductNameInput('');
     }
   };
 
@@ -87,32 +221,55 @@ export const ComprasManager: React.FC<ComprasManagerProps> = ({
     setItemsCompra(itemsCompra.filter((_, i) => i !== index));
   };
 
-  const totalCompra = itemsCompra.reduce((acc, item) => acc + item.subtotal, 0);
+  // Calculations
+  const subtotalNeto = itemsCompra.reduce((acc, item) => acc + item.subtotal, 0);
+  const baseImponible = itemsCompra
+    .filter((i) => !i.exentoIva)
+    .reduce((acc, item) => acc + item.subtotal, 0);
+  const montoExento = itemsCompra
+    .filter((i) => i.exentoIva)
+    .reduce((acc, item) => acc + item.subtotal, 0);
+  const montoIva = +(baseImponible * 0.16).toFixed(2);
+  const totalCompra = +(baseImponible + montoIva + montoExento).toFixed(2);
 
   const handleSubmitCompra = (e: React.FormEvent) => {
     e.preventDefault();
     if (itemsCompra.length === 0) {
-      alert('Debes agregar al menos un producto a la orden de compra.');
+      alert('Debes agregar al menos un artículo a la factura del proveedor.');
       return;
     }
 
+    const nroFacturaFinal = numeroFactura.trim() || `FAC-${Date.now().toString().slice(-6)}`;
     const prov = proveedores.find((p) => p.id === proveedorId);
 
-    onRegistrarCompra({
-      proveedorId,
-      proveedorNombre: prov ? prov.nombre : 'Proveedor General',
-      sucursalId: sucursalDestinoId,
-      numeroFactura: numeroFactura.trim() || `FAC-${Date.now().toString().slice(-6)}`,
-      fecha: new Date().toISOString(),
-      total: totalCompra,
-      estado: 'completada',
-      usuarioNombre: currentUser?.nombre_completo || 'Administrador',
-      detalles: itemsCompra,
-    });
+    onRegistrarCompra(
+      {
+        proveedorId,
+        proveedorNombre: prov ? prov.nombre : 'Proveedor General',
+        sucursalId: sucursalDestinoId,
+        numeroFactura: nroFacturaFinal,
+        numeroControl: numeroControl.trim() || undefined,
+        fecha: fechaFactura || new Date().toISOString(),
+        fechaVencimiento: fechaVencimiento || undefined,
+        condicionPago,
+        subtotalNeto: +subtotalNeto.toFixed(2),
+        baseImponible: +baseImponible.toFixed(2),
+        montoExento: +montoExento.toFixed(2),
+        montoIva: +montoIva.toFixed(2),
+        total: totalCompra,
+        estado: 'completada',
+        usuarioNombre: currentUser?.nombre_completo || 'Administrador',
+        detalles: itemsCompra,
+      },
+      newlyCreatedProducts
+    );
 
     setShowNewModal(false);
     setItemsCompra([]);
+    setNewlyCreatedProducts([]);
     setNumeroFactura('');
+    setNumeroControl('');
+    alert(`✅ Factura de Proveedor #${nroFacturaFinal} registrada exitosamente. Se ingresaron los artículos al inventario y se actualizaron los costos y precios de venta.`);
   };
 
   const filteredCompras = compras.filter(
@@ -125,30 +282,34 @@ export const ComprasManager: React.FC<ComprasManagerProps> = ({
   return (
     <div className="space-y-6">
       {/* Top Header Card */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 text-slate-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 text-slate-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-lg">
         <div>
           <h2 className="text-lg font-bold text-white flex items-center gap-2">
-            <ShoppingBag className="w-5 h-5 text-emerald-400" /> Gestión de Compras y Recepción de Mercancía
+            <ShoppingBag className="w-5 h-5 text-emerald-400" /> Registro de Compras y Facturas de Proveedores
           </h2>
           <p className="text-xs text-slate-400 mt-1">
-            Registra órdenes de compra, abastece almacenes y actualiza costos en tiempo real con conversión dual.
+            Entrada directa a inventario con códigos de barra, presentación por unidades/kg/litros, fracciones, costos y actualización de PVP.
           </p>
         </div>
 
         <button
           type="button"
-          onClick={() => setShowNewModal(true)}
+          onClick={() => {
+            setShowNewModal(true);
+            setItemsCompra([]);
+            setNumeroFactura(`FAC-${Math.floor(1000 + Math.random() * 9000)}`);
+          }}
           className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold px-4 py-2.5 rounded-xl text-xs flex items-center gap-2 cursor-pointer shadow-lg shadow-emerald-500/20 transition-all shrink-0"
         >
           <Plus className="w-4 h-4" />
-          <span>Nueva Compra a Proveedor</span>
+          <span>+ Nueva Compra (Factura Proveedor)</span>
         </button>
       </div>
 
       {/* Quick Summary Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-          <span className="text-xs text-slate-400 block font-medium">Total Compras Registradas</span>
+          <span className="text-xs text-slate-400 block font-medium">Total Compras Facturadas</span>
           <div className="text-xl font-bold text-white font-mono mt-1">
             {formatUSD(compras.reduce((acc, c) => acc + c.total, 0))}
           </div>
@@ -158,15 +319,15 @@ export const ComprasManager: React.FC<ComprasManagerProps> = ({
         </div>
 
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-          <span className="text-xs text-slate-400 block font-medium">Órdenes Realizadas</span>
-          <div className="text-xl font-bold text-white font-mono mt-1">{compras.length} órdenes</div>
-          <span className="text-xs text-slate-500 block mt-0.5">Ingresadas al inventario central</span>
+          <span className="text-xs text-slate-400 block font-medium">Facturas Registradas</span>
+          <div className="text-xl font-bold text-white font-mono mt-1">{compras.length} facturas</div>
+          <span className="text-xs text-slate-500 block mt-0.5">Entrada automatizada a almacenes</span>
         </div>
 
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-          <span className="text-xs text-slate-400 block font-medium">Proveedores Activos</span>
+          <span className="text-xs text-slate-400 block font-medium">Proveedores Registrados</span>
           <div className="text-xl font-bold text-white font-mono mt-1">{proveedores.length} empresas</div>
-          <span className="text-xs text-emerald-400 block mt-0.5">Catálogo de suministros verificado</span>
+          <span className="text-xs text-emerald-400 block mt-0.5">Cuentas por pagar sincronizadas</span>
         </div>
       </div>
 
@@ -191,23 +352,26 @@ export const ComprasManager: React.FC<ComprasManagerProps> = ({
               <tr className="border-b border-slate-800 text-slate-400 bg-slate-950/50">
                 <th className="py-3 px-3">ID / Factura</th>
                 <th className="py-3 px-3">Proveedor</th>
-                <th className="py-3 px-3">Destino</th>
+                <th className="py-3 px-3">Sucursal Destino</th>
+                <th className="py-3 px-3">Régimen</th>
                 <th className="py-3 px-3">Fecha</th>
-                <th className="py-3 px-3">Ítems</th>
-                <th className="py-3 px-3 text-right">Total ($ / Bs.)</th>
-                <th className="py-3 px-3 text-center">Estado</th>
+                <th className="py-3 px-3">Artículos</th>
+                <th className="py-3 px-3 text-right">Total $ USD</th>
+                <th className="py-3 px-3 text-right">Total Bs</th>
+                <th className="py-3 px-3 text-center">Acción</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60">
               {filteredCompras.map((compra) => {
                 const sucursal = sucursales.find((s) => s.id === compra.sucursalId);
-                const totalUnits = compra.detalles.reduce((acc, d) => acc + d.cantidad, 0);
+                const totalUnits = (compra.detalles || []).reduce((acc, d) => acc + d.cantidad, 0);
+                const isExento = (compra.detalles || []).every((d) => d.exentoIva) || (compra.montoExento && compra.montoExento > 0 && !compra.baseImponible);
 
                 return (
                   <tr key={compra.id} className="hover:bg-slate-800/40 text-slate-200 transition-colors">
                     <td className="py-3 px-3 font-mono font-semibold">
-                      <div className="text-white">#{compra.id}</div>
-                      <div className="text-[10px] text-slate-400">{compra.numeroFactura || 'S/N'}</div>
+                      <div className="text-white">#{compra.numeroFactura || `FAC-${compra.id}`}</div>
+                      <div className="text-[10px] text-slate-400">ID: {compra.id}</div>
                     </td>
                     <td className="py-3 px-3">
                       <div className="font-bold text-white">{compra.proveedorNombre}</div>
@@ -215,25 +379,44 @@ export const ComprasManager: React.FC<ComprasManagerProps> = ({
                     </td>
                     <td className="py-3 px-3">
                       <span className="text-[11px] bg-slate-950 border border-slate-800 px-2 py-0.5 rounded text-slate-300">
-                        {sucursal?.nombre || `Sucursal ${compra.sucursalId}`}
+                        {sucursal?.nombre || (compra.sucursalId === 1 ? empresaConfig.nombreTienda1 : compra.sucursalId === 2 ? empresaConfig.nombreTienda2 : 'Almacén Central')}
                       </span>
                     </td>
-                    <td className="py-3 px-3 text-slate-400">
+                    <td className="py-3 px-3">
+                      {isExento ? (
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                          EXENTO
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                          IVA 16%
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-3 px-3 text-slate-400 font-mono">
                       {new Date(compra.fecha).toLocaleDateString('es-VE')}
                     </td>
                     <td className="py-3 px-3">
                       <span className="font-mono bg-slate-800 text-emerald-400 px-2 py-0.5 rounded text-[11px]">
-                        {totalUnits} uds ({compra.detalles.length} prod)
+                        {totalUnits.toFixed(totalUnits % 1 === 0 ? 0 : 2)} cant ({(compra.detalles || []).length} ítems)
                       </span>
                     </td>
-                    <td className="py-3 px-3 text-right font-mono font-bold">
-                      <div className="text-emerald-400">{formatUSD(compra.total)}</div>
-                      <div className="text-[10px] text-slate-400">{formatBs(compra.total, empresaConfig.tasaCambio)}</div>
+                    <td className="py-3 px-3 text-right font-mono font-bold text-emerald-400">
+                      {formatUSD(compra.total)}
+                    </td>
+                    <td className="py-3 px-3 text-right font-mono text-slate-300">
+                      {formatBs(compra.total, empresaConfig.tasaCambio)}
                     </td>
                     <td className="py-3 px-3 text-center">
-                      <span className="bg-emerald-500/20 text-emerald-300 text-[10px] font-bold px-2 py-0.5 rounded-full border border-emerald-500/30">
-                        Completada
-                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedCompraDetail(compra)}
+                        className="p-1.5 bg-slate-800 hover:bg-slate-700 text-emerald-400 hover:text-emerald-300 rounded-lg border border-slate-700 cursor-pointer transition-colors text-[11px] flex items-center gap-1 mx-auto"
+                        title="Ver detalle completo de la factura"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                        <span>Ver</span>
+                      </button>
                     </td>
                   </tr>
                 );
@@ -243,31 +426,47 @@ export const ComprasManager: React.FC<ComprasManagerProps> = ({
         </div>
       </div>
 
-      {/* New Purchase Modal */}
+      {/* ========================================================================================= */}
+      {/* MODAL: REGISTRO COMPLETO DE FACTURA DE PROVEEDOR (NUEVA COMPRA)                         */}
+      {/* ========================================================================================= */}
       {showNewModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fade-in">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl space-y-4 max-h-[90vh] flex flex-col">
-            <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/50">
-              <h3 className="font-bold text-white text-sm flex items-center gap-2">
-                <ShoppingBag className="w-4 h-4 text-emerald-400" /> Registrar Nueva Compra de Mercancía
-              </h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-sm animate-fade-in">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-5xl overflow-hidden shadow-2xl space-y-4 max-h-[92vh] flex flex-col">
+            {/* Modal Header */}
+            <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/80">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                  <FileText className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-white text-base">
+                    Registro de Factura de Proveedor (Ingreso a Inventario)
+                  </h3>
+                  <p className="text-[11px] text-slate-400">
+                    Cargue todos los artículos facturados, códigos de barras, unidades (UND/KG/L), fracciones, costos y PVP al público.
+                  </p>
+                </div>
+              </div>
               <button
                 type="button"
                 onClick={() => setShowNewModal(false)}
-                className="text-slate-400 hover:text-white text-xs cursor-pointer"
+                className="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-800 cursor-pointer transition-colors"
               >
-                ✕ Cerrar
+                <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleSubmitCompra} className="p-5 space-y-4 overflow-y-auto flex-1 custom-scrollbar">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div>
-                  <label className="text-[11px] font-semibold text-slate-400 block mb-1">Proveedor</label>
+            <form onSubmit={handleSubmitCompra} className="p-4 sm:p-5 space-y-4 overflow-y-auto flex-1 custom-scrollbar">
+              {/* Factura Cabecera */}
+              <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 grid grid-cols-1 sm:grid-cols-12 gap-3">
+                <div className="sm:col-span-4">
+                  <label className="text-[11px] font-semibold text-slate-300 block mb-1">
+                    Proveedor Emisor:
+                  </label>
                   <select
                     value={proveedorId}
                     onChange={(e) => setProveedorId(Number(e.target.value))}
-                    className="w-full bg-slate-950 border border-slate-700 text-white text-xs px-3 py-2 rounded-xl focus:border-emerald-500 focus:outline-none"
+                    className="w-full bg-slate-900 border border-slate-700 text-white text-xs px-3 py-2 rounded-xl focus:border-emerald-500 focus:outline-none"
                   >
                     {proveedores.map((p) => (
                       <option key={p.id} value={p.id}>
@@ -277,12 +476,53 @@ export const ComprasManager: React.FC<ComprasManagerProps> = ({
                   </select>
                 </div>
 
-                <div>
-                  <label className="text-[11px] font-semibold text-slate-400 block mb-1">Sucursal Destino</label>
+                <div className="sm:col-span-2">
+                  <label className="text-[11px] font-semibold text-slate-300 block mb-1">
+                    Nº de Factura:
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="FAC-00982"
+                    value={numeroFactura}
+                    onChange={(e) => setNumeroFactura(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-700 text-white text-xs px-3 py-2 rounded-xl focus:border-emerald-500 focus:outline-none font-mono font-bold"
+                  />
+                </div>
+
+                <div className="sm:col-span-2">
+                  <label className="text-[11px] font-semibold text-slate-300 block mb-1">
+                    Nº de Control (Opc):
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="00-001234"
+                    value={numeroControl}
+                    onChange={(e) => setNumeroControl(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-700 text-white text-xs px-3 py-2 rounded-xl focus:border-emerald-500 focus:outline-none font-mono"
+                  />
+                </div>
+
+                <div className="sm:col-span-2">
+                  <label className="text-[11px] font-semibold text-slate-300 block mb-1">
+                    Fecha Emisión:
+                  </label>
+                  <input
+                    type="date"
+                    value={fechaFactura}
+                    onChange={(e) => setFechaFactura(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-700 text-white text-xs px-2.5 py-2 rounded-xl focus:border-emerald-500 focus:outline-none font-mono"
+                  />
+                </div>
+
+                <div className="sm:col-span-2">
+                  <label className="text-[11px] font-semibold text-slate-300 block mb-1">
+                    Destino Inventario:
+                  </label>
                   <select
                     value={sucursalDestinoId}
                     onChange={(e) => setSucursalDestinoId(Number(e.target.value))}
-                    className="w-full bg-slate-950 border border-slate-700 text-white text-xs px-3 py-2 rounded-xl focus:border-emerald-500 focus:outline-none"
+                    className="w-full bg-slate-900 border border-slate-700 text-white text-xs px-2.5 py-2 rounded-xl focus:border-emerald-500 focus:outline-none"
                   >
                     {sucursales.map((s) => (
                       <option key={s.id} value={s.id}>
@@ -291,141 +531,463 @@ export const ComprasManager: React.FC<ComprasManagerProps> = ({
                     ))}
                   </select>
                 </div>
-
-                <div>
-                  <label className="text-[11px] font-semibold text-slate-400 block mb-1">Nº Factura / Control</label>
-                  <input
-                    type="text"
-                    placeholder="FAC-00129"
-                    value={numeroFactura}
-                    onChange={(e) => setNumeroFactura(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-700 text-white text-xs px-3 py-2 rounded-xl focus:border-emerald-500 focus:outline-none font-mono"
-                  />
-                </div>
               </div>
 
-              {/* Add item bar */}
-              <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-2">
-                <span className="text-[11px] font-bold text-emerald-400 block">Agregar Productos a la Orden</span>
-                <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
-                  <div className="sm:col-span-6">
-                    <label className="text-[10px] text-slate-400 block">Producto</label>
+              {/* BARRA DE ENTRADA DE ARTÍCULO INDIVIDUAL FACTURADO */}
+              <div className="bg-slate-950 p-4 rounded-xl border border-emerald-500/30 space-y-3 shadow-inner">
+                <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
+                  <span className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
+                    <PlusCircle className="w-4 h-4" /> Cargar Artículo Facturado a la Factura
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleProductSelect('new')}
+                      className={`text-[11px] px-2.5 py-0.5 rounded-lg border transition-colors cursor-pointer ${
+                        selectedProdId === 'new'
+                          ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40 font-bold'
+                          : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-white'
+                      }`}
+                    >
+                      + Nuevo Artículo no Registrado
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-end">
+                  {/* Selector o Catálogo */}
+                  <div className="sm:col-span-4">
+                    <label className="text-[10px] text-slate-400 block mb-1 font-semibold">
+                      Seleccionar de Catálogo:
+                    </label>
                     <select
                       value={selectedProdId}
-                      onChange={(e) => setSelectedProdId(Number(e.target.value))}
-                      className="w-full bg-slate-900 border border-slate-700 text-white text-xs px-2 py-1.5 rounded-lg"
+                      onChange={(e) => handleProductSelect(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-700 text-white text-xs px-2.5 py-2 rounded-lg focus:border-emerald-500 focus:outline-none"
                     >
+                      <option value="new">-- [Nuevo Producto / No Catalogado] --</option>
                       {productos.map((p) => (
                         <option key={p.id} value={p.id}>
-                          {p.nombre} (PVP: ${p.precio.toFixed(2)})
+                          {p.nombre} ({p.codigo_barras}) [{p.unidad_medida || 'UND'}] - Costo: ${p.costo || 0}
                         </option>
                       ))}
                     </select>
                   </div>
 
+                  {/* Código de barras */}
                   <div className="sm:col-span-3">
-                    <label className="text-[10px] text-slate-400 block">Cantidad</label>
+                    <label className="text-[10px] text-slate-400 block mb-1 font-semibold flex items-center gap-1">
+                      <Barcode className="w-3 h-3 text-indigo-400" /> Código de Barras / SKU:
+                    </label>
                     <input
-                      type="number"
-                      min={1}
-                      value={cantidadInput}
-                      onChange={(e) => setCantidadInput(Number(e.target.value))}
-                      className="w-full bg-slate-900 border border-slate-700 text-white text-xs px-2 py-1.5 rounded-lg font-mono"
+                      type="text"
+                      placeholder="Ej: 75910080"
+                      value={barcodeInput}
+                      onChange={(e) => handleBarcodeChange(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-700 text-white text-xs px-2.5 py-2 rounded-lg font-mono focus:border-emerald-500 focus:outline-none"
                     />
                   </div>
 
+                  {/* Nombre del Producto */}
+                  <div className="sm:col-span-5">
+                    <label className="text-[10px] text-slate-400 block mb-1 font-semibold">
+                      Descripción / Nombre del Artículo:
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Ej: Arroz Blanco 1kg"
+                      value={productNameInput}
+                      onChange={(e) => setProductNameInput(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-700 text-white text-xs px-2.5 py-2 rounded-lg focus:border-emerald-500 focus:outline-none font-semibold"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-end pt-1">
+                  {/* Presentación / Unidad de Medida */}
                   <div className="sm:col-span-3">
-                    <label className="text-[10px] text-slate-400 block">Costo Unitario ($)</label>
+                    <label className="text-[10px] text-slate-400 block mb-1 font-semibold flex items-center gap-1">
+                      <Scale className="w-3 h-3 text-amber-400" /> Presentación (Unidad):
+                    </label>
+                    <select
+                      value={unidadMedidaInput}
+                      onChange={(e) => setUnidadMedidaInput(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-700 text-white text-xs px-2 py-2 rounded-lg focus:border-emerald-500 focus:outline-none font-bold"
+                    >
+                      <option value="UND">Pieza / Unidad (UND)</option>
+                      <option value="KG">Kilogramo (KG)</option>
+                      <option value="L">Litro (L)</option>
+                      <option value="PQ">Paquete / Bulto (PQ)</option>
+                    </select>
+                  </div>
+
+                  {/* Cantidad (Soporta Fracciones) */}
+                  <div className="sm:col-span-2">
+                    <label className="text-[10px] text-slate-400 block mb-1 font-semibold">
+                      Cantidad Facturada (Fracción):
+                    </label>
+                    <input
+                      type="number"
+                      step="0.001"
+                      min="0.001"
+                      placeholder="1.000"
+                      value={cantidadInput}
+                      onChange={(e) => setCantidadInput(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-700 text-emerald-400 text-xs px-2.5 py-2 rounded-lg font-mono font-bold focus:border-emerald-500 focus:outline-none"
+                    />
+                  </div>
+
+                  {/* Costo Unitario de Factura */}
+                  <div className="sm:col-span-2">
+                    <label className="text-[10px] text-slate-400 block mb-1 font-semibold">
+                      Costo Unitario ($ USD):
+                    </label>
                     <input
                       type="number"
                       step="0.01"
-                      min={0.01}
+                      min="0.01"
+                      placeholder="0.00"
                       value={costoInput}
-                      onChange={(e) => setCostoInput(Number(e.target.value))}
-                      className="w-full bg-slate-900 border border-slate-700 text-white text-xs px-2 py-1.5 rounded-lg font-mono"
+                      onChange={(e) => setCostoInput(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-700 text-white text-xs px-2.5 py-2 rounded-lg font-mono focus:border-emerald-500 focus:outline-none font-bold"
                     />
                   </div>
-                </div>
 
-                <div className="flex justify-end">
-                  <button
-                    type="button"
-                    onClick={handleAddItem}
-                    className="bg-slate-800 hover:bg-slate-700 text-emerald-400 font-bold px-3 py-1 rounded-lg text-xs flex items-center gap-1 cursor-pointer border border-emerald-500/30"
-                  >
-                    <Plus className="w-3.5 h-3.5" /> Agregar Ítem
-                  </button>
+                  {/* Precio de Venta al Público (PVP) */}
+                  <div className="sm:col-span-2">
+                    <label className="text-[10px] text-slate-400 block mb-1 font-semibold flex items-center gap-1">
+                      <Tag className="w-3 h-3 text-emerald-400" /> PVP Venta ($ USD):
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0.01"
+                      placeholder="0.00"
+                      value={pvpInput}
+                      onChange={(e) => setPvpInput(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-700 text-emerald-300 text-xs px-2.5 py-2 rounded-lg font-mono focus:border-emerald-500 focus:outline-none font-bold"
+                    />
+                  </div>
+
+                  {/* Exento de IVA y Botón de Añadir */}
+                  <div className="sm:col-span-3 flex items-center gap-2 justify-end">
+                    <label className="flex items-center gap-1.5 cursor-pointer select-none text-[11px] bg-slate-900 border border-slate-800 px-2.5 py-2 rounded-lg">
+                      <input
+                        type="checkbox"
+                        checked={itemExentoInput}
+                        onChange={(e) => setItemExentoInput(e.target.checked)}
+                        className="w-3.5 h-3.5 rounded text-amber-500 bg-slate-950 border-slate-700 cursor-pointer"
+                      />
+                      <span className={itemExentoInput ? 'text-amber-300 font-bold' : 'text-slate-400'}>
+                        Exento IVA
+                      </span>
+                    </label>
+
+                    <button
+                      type="button"
+                      onClick={handleAddItemToInvoice}
+                      className="bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold px-3 py-2 rounded-lg text-xs flex items-center gap-1 cursor-pointer transition-colors shadow-md shadow-emerald-600/20 shrink-0"
+                    >
+                      <Plus className="w-4 h-4" /> Agregar
+                    </button>
+                  </div>
                 </div>
               </div>
 
-              {/* Items List */}
-              <div className="space-y-1.5">
-                <span className="text-[11px] font-semibold text-slate-400 block">Ítems en la Orden ({itemsCompra.length})</span>
+              {/* TABLA DE TODOS LOS ARTÍCULOS EN LA FACTURA */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-white flex items-center gap-2">
+                    <Receipt className="w-4 h-4 text-emerald-400" /> Artículos en esta Factura ({itemsCompra.length})
+                  </span>
+                  <span className="text-[11px] text-slate-400">
+                    Total Unidades/Fracción:{' '}
+                    <strong className="text-emerald-400 font-mono">
+                      {itemsCompra.reduce((sum, item) => sum + item.cantidad, 0).toFixed(3)}
+                    </strong>
+                  </span>
+                </div>
+
                 {itemsCompra.length === 0 ? (
-                  <div className="p-4 text-center text-slate-500 text-xs bg-slate-950/40 rounded-xl border border-dashed border-slate-800">
-                    No has agregado ningún producto todavía.
+                  <div className="p-8 text-center text-slate-500 text-xs bg-slate-950/60 rounded-xl border border-dashed border-slate-800">
+                    No has agregado ningún artículo a la factura todavía. Utiliza la barra superior para registrar cada producto.
                   </div>
                 ) : (
-                  <div className="space-y-1 max-h-48 overflow-y-auto pr-1 custom-scrollbar">
-                    {itemsCompra.map((item, idx) => (
-                      <div
-                        key={idx}
-                        className="flex items-center justify-between bg-slate-950 p-2.5 rounded-lg border border-slate-800 text-xs"
-                      >
-                        <div>
-                          <div className="font-bold text-white">{item.productoNombre}</div>
-                          <div className="text-[10px] text-slate-400">
-                            {item.cantidad} uds × ${item.costoUnitario.toFixed(2)}
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <span className="font-mono font-bold text-emerald-400">${item.subtotal.toFixed(2)}</span>
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveItem(idx)}
-                            className="text-rose-400 hover:text-rose-300 text-xs cursor-pointer"
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      </div>
-                    ))}
+                  <div className="overflow-x-auto border border-slate-800 rounded-xl bg-slate-950/70 max-h-56 overflow-y-auto custom-scrollbar">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead>
+                        <tr className="border-b border-slate-800 text-slate-400 bg-slate-900/80">
+                          <th className="py-2.5 px-3">Código Barras</th>
+                          <th className="py-2.5 px-3">Descripción</th>
+                          <th className="py-2.5 px-2 text-center">Unidad</th>
+                          <th className="py-2.5 px-2 text-right">Cantidad</th>
+                          <th className="py-2.5 px-2 text-right">Costo Unit. ($)</th>
+                          <th className="py-2.5 px-2 text-right">PVP ($)</th>
+                          <th className="py-2.5 px-2 text-center">IVA</th>
+                          <th className="py-2.5 px-3 text-right">Subtotal ($)</th>
+                          <th className="py-2.5 px-2 text-center">Quitar</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800/60 font-mono">
+                        {itemsCompra.map((item, idx) => (
+                          <tr key={idx} className="hover:bg-slate-900/60 text-slate-200">
+                            <td className="py-2 px-3 text-slate-400 text-[11px]">
+                              {item.codigo_barras || 'S/C'}
+                            </td>
+                            <td className="py-2 px-3 font-sans font-semibold text-white">
+                              {item.productoNombre}
+                            </td>
+                            <td className="py-2 px-2 text-center">
+                              <span className="bg-slate-800 text-amber-300 px-1.5 py-0.5 rounded text-[10px] font-bold">
+                                {item.unidad_medida || 'UND'}
+                              </span>
+                            </td>
+                            <td className="py-2 px-2 text-right font-bold text-emerald-400">
+                              {item.cantidad.toFixed(item.cantidad % 1 === 0 ? 0 : 3)}
+                            </td>
+                            <td className="py-2 px-2 text-right text-slate-300">
+                              ${item.costoUnitario.toFixed(2)}
+                            </td>
+                            <td className="py-2 px-2 text-right text-emerald-300">
+                              ${(item.precioVenta || item.costoUnitario * 1.3).toFixed(2)}
+                            </td>
+                            <td className="py-2 px-2 text-center">
+                              {item.exentoIva ? (
+                                <span className="text-[9px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded font-bold border border-amber-500/30">
+                                  EXENTO
+                                </span>
+                              ) : (
+                                <span className="text-[9px] bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5 rounded font-bold border border-emerald-500/30">
+                                  16%
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-2 px-3 text-right font-bold text-white">
+                              ${item.subtotal.toFixed(2)}
+                            </td>
+                            <td className="py-2 px-2 text-center">
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveItem(idx)}
+                                className="text-rose-400 hover:text-rose-300 p-1 hover:bg-rose-500/10 rounded cursor-pointer"
+                                title="Eliminar ítem"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 )}
               </div>
 
-              {/* Total Card */}
-              <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 flex items-center justify-between">
-                <div>
-                  <span className="text-xs text-slate-400 block">Total de la Compra</span>
-                  <span className="text-xs text-slate-500">Stock se incrementará de inmediato</span>
+              {/* RESUMEN FISCAL Y TOTALES DE LA FACTURA */}
+              <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2 text-xs">
+                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+                    Condiciones de Pago y Recepción:
+                  </span>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[10px] text-slate-400 block mb-1">Condición:</label>
+                      <select
+                        value={condicionPago}
+                        onChange={(e) => setCondicionPago(e.target.value as any)}
+                        className="w-full bg-slate-900 border border-slate-700 text-white text-xs px-2.5 py-1.5 rounded-lg"
+                      >
+                        <option value="credito">Crédito (Genera CxP)</option>
+                        <option value="contado">Contado</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-slate-400 block mb-1">Fecha Vencimiento:</label>
+                      <input
+                        type="date"
+                        value={fechaVencimiento}
+                        onChange={(e) => setFechaVencimiento(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-700 text-white text-xs px-2 py-1.5 rounded-lg font-mono"
+                      />
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-slate-500">
+                    Al procesar, los artículos se suman inmediatamente al stock disponible en la sucursal seleccionada.
+                  </p>
                 </div>
-                <div className="text-right">
-                  <div className="text-xl font-bold font-mono text-emerald-400">{formatUSD(totalCompra)}</div>
-                  <div className="text-xs text-slate-400 font-mono">
-                    {formatBs(totalCompra, empresaConfig.tasaCambio)}
+
+                <div className="space-y-2 text-xs font-mono bg-slate-900/60 p-3 rounded-lg border border-slate-800">
+                  <div className="flex justify-between text-slate-400">
+                    <span>Subtotal Neto Facturado:</span>
+                    <span className="text-white font-bold">{formatUSD(subtotalNeto)}</span>
+                  </div>
+                  <div className="flex justify-between text-slate-400">
+                    <span>Base Imponible Gravada (16%):</span>
+                    <span className="text-emerald-300 font-bold">{formatUSD(baseImponible)}</span>
+                  </div>
+                  <div className="flex justify-between text-slate-400">
+                    <span>Total Exento de IVA (0%):</span>
+                    <span className="text-amber-300 font-bold">{formatUSD(montoExento)}</span>
+                  </div>
+                  <div className="flex justify-between text-slate-400 pb-2 border-b border-slate-800">
+                    <span>IVA Liquidado (16%):</span>
+                    <span className="text-emerald-400 font-bold">+{formatUSD(montoIva)}</span>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-1">
+                    <div>
+                      <span className="text-xs text-white font-sans font-bold block">TOTAL FACTURA PROVEEDOR</span>
+                      <span className="text-[10px] text-slate-500 font-sans">USD y Bolívares oficiales</span>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-xl font-bold font-mono text-emerald-400">{formatUSD(totalCompra)}</div>
+                      <div className="text-xs text-slate-400 font-mono">
+                        {formatBs(totalCompra, empresaConfig.tasaCambio)}
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
 
-              <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
+              {/* Botones de Acción */}
+              <div className="flex justify-end gap-2.5 pt-2 border-t border-slate-800">
                 <button
                   type="button"
                   onClick={() => setShowNewModal(false)}
-                  className="px-4 py-2 rounded-xl text-xs text-slate-400 hover:text-white bg-slate-800 cursor-pointer"
+                  className="px-4 py-2.5 rounded-xl text-xs text-slate-400 hover:text-white bg-slate-800 cursor-pointer transition-colors"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
                   disabled={itemsCompra.length === 0}
-                  className="bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-bold px-5 py-2 rounded-xl text-xs flex items-center gap-1.5 cursor-pointer shadow-lg shadow-emerald-500/20"
+                  className="bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-bold px-6 py-2.5 rounded-xl text-xs flex items-center gap-2 cursor-pointer shadow-lg shadow-emerald-500/25 transition-all"
                 >
                   <PackageCheck className="w-4 h-4" />
-                  <span>Procesar e Ingresar a Inventario</span>
+                  <span>Procesar Factura e Ingresar a Inventario</span>
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================================= */}
+      {/* MODAL: VER DETALLE COMPLETO DE FACTURA DE COMPRA                                          */}
+      {/* ========================================================================================= */}
+      {selectedCompraDetail && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-3xl overflow-hidden shadow-2xl space-y-4 max-h-[90vh] flex flex-col">
+            <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/80">
+              <div className="flex items-center gap-2">
+                <FileText className="w-5 h-5 text-emerald-400" />
+                <div>
+                  <h3 className="font-bold text-white text-sm">
+                    Factura de Proveedor #{selectedCompraDetail.numeroFactura || selectedCompraDetail.id}
+                  </h3>
+                  <p className="text-[11px] text-slate-400">
+                    Proveedor: <strong className="text-white">{selectedCompraDetail.proveedorNombre}</strong>
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedCompraDetail(null)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4 overflow-y-auto flex-1 custom-scrollbar text-xs">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-950 p-3.5 rounded-xl border border-slate-800">
+                <div>
+                  <span className="text-[10px] text-slate-400 block">Fecha Emisión:</span>
+                  <span className="font-mono font-bold text-white">
+                    {new Date(selectedCompraDetail.fecha).toLocaleDateString('es-VE')}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 block">Sucursal Destino:</span>
+                  <span className="font-semibold text-emerald-400">
+                    {selectedCompraDetail.sucursalId === 1 ? empresaConfig.nombreTienda1 : selectedCompraDetail.sucursalId === 2 ? empresaConfig.nombreTienda2 : 'Almacén Central'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 block">Registrado por:</span>
+                  <span className="text-slate-200">{selectedCompraDetail.usuarioNombre || 'Admin'}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 block">Condición:</span>
+                  <span className="bg-slate-800 text-amber-300 px-1.5 py-0.5 rounded text-[10px] font-bold">
+                    {selectedCompraDetail.condicionPago || 'Crédito'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <h4 className="font-bold text-white">Detalle de Artículos Facturados:</h4>
+                <div className="border border-slate-800 rounded-xl overflow-hidden">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="border-b border-slate-800 text-slate-400 bg-slate-950">
+                        <th className="py-2 px-3">Código</th>
+                        <th className="py-2 px-3">Artículo</th>
+                        <th className="py-2 px-2 text-center">Unidad</th>
+                        <th className="py-2 px-2 text-right">Cantidad</th>
+                        <th className="py-2 px-2 text-right">Costo Unit.</th>
+                        <th className="py-2 px-2 text-center">Régimen</th>
+                        <th className="py-2 px-3 text-right">Subtotal</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/60 font-mono">
+                      {(selectedCompraDetail.detalles || []).map((d, i) => (
+                        <tr key={i} className="hover:bg-slate-800/30">
+                          <td className="py-2 px-3 text-slate-400 text-[11px]">{d.codigo_barras || `SKU-${d.productoId}`}</td>
+                          <td className="py-2 px-3 font-sans font-semibold text-white">{d.productoNombre}</td>
+                          <td className="py-2 px-2 text-center text-amber-300">{d.unidad_medida || 'UND'}</td>
+                          <td className="py-2 px-2 text-right font-bold text-emerald-400">{d.cantidad}</td>
+                          <td className="py-2 px-2 text-right">${d.costoUnitario.toFixed(2)}</td>
+                          <td className="py-2 px-2 text-center">
+                            {d.exentoIva ? (
+                              <span className="text-[9px] bg-amber-500/20 text-amber-300 px-1 py-0.5 rounded font-bold">
+                                EXENTO
+                              </span>
+                            ) : (
+                              <span className="text-[9px] bg-emerald-500/20 text-emerald-300 px-1 py-0.5 rounded font-bold">
+                                16%
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-2 px-3 text-right font-bold text-white">${d.subtotal.toFixed(2)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 flex justify-between items-center font-mono">
+                <div>
+                  <span className="text-slate-400 block text-xs">Total Factura:</span>
+                  <span className="text-slate-500 text-[10px]">Tasa aplicada: 1$ = {formatBs(1, empresaConfig.tasaCambio)}</span>
+                </div>
+                <div className="text-right">
+                  <div className="text-xl font-bold text-emerald-400">{formatUSD(selectedCompraDetail.total)}</div>
+                  <div className="text-xs text-slate-400">{formatBs(selectedCompraDetail.total, empresaConfig.tasaCambio)}</div>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-3 border-t border-slate-800 flex justify-end bg-slate-950/50">
+              <button
+                type="button"
+                onClick={() => setSelectedCompraDetail(null)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs cursor-pointer"
+              >
+                Cerrar
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -49,8 +49,13 @@ import { downloadStandaloneHtmlFile } from './lib/downloadHtml';
 export default function App() {
   // Navigation State (starts in 'ventas' or 'dashboard' if admin)
   const [activeTab, setActiveTab] = useState<SidebarTab>('ventas');
-  // Sidebar Collapse State (collapses left on module selection)
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(false);
+  // Sidebar Collapse State (starts collapsed on small laptop/tablet screens)
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return window.innerWidth < 1024;
+    }
+    return false;
+  });
 
   // App State: Users
   const [usuarios, setUsuarios] = useState<Usuario[]>(INITIAL_USUARIOS);
@@ -179,18 +184,34 @@ export default function App() {
     cliente: { id: number | null; nombre: string; rif: string },
     pagoDetalle: DetallePagoVenta
   ) => {
-    const totalVenta = items.reduce((acc, item) => acc + item.producto.precio * item.cantidad, 0);
+    const subtotalNeto = items.reduce((acc, item) => acc + item.producto.precio * item.cantidad, 0);
+    const baseImponible = items
+      .filter((i) => !i.producto.exento_iva)
+      .reduce((acc, item) => acc + item.producto.precio * item.cantidad, 0);
+    const montoExento = items
+      .filter((i) => !!i.producto.exento_iva)
+      .reduce((acc, item) => acc + item.producto.precio * item.cantidad, 0);
+    const montoIva = +(baseImponible * 0.16).toFixed(2);
+    const totalVenta = +(baseImponible + montoIva + montoExento).toFixed(2);
     const newVentaId = ventas.length + 1;
 
-    const detalles = items.map((item, index) => ({
-      id: newVentaId * 100 + index,
-      venta_id: newVentaId,
-      producto_id: item.producto.id,
-      producto_nombre: item.producto.nombre,
-      cantidad: item.cantidad,
-      precio_unitario: item.producto.precio,
-      subtotal: item.producto.precio * item.cantidad,
-    }));
+    const detalles = items.map((item, index) => {
+      const isExento = !!item.producto.exento_iva;
+      const subtotalItem = +(item.producto.precio * item.cantidad).toFixed(2);
+      const ivaItem = isExento ? 0 : +(subtotalItem * 0.16).toFixed(2);
+
+      return {
+        id: newVentaId * 100 + index,
+        venta_id: newVentaId,
+        producto_id: item.producto.id,
+        producto_nombre: item.producto.nombre,
+        cantidad: item.cantidad,
+        precio_unitario: item.producto.precio,
+        subtotal: subtotalItem,
+        exento_iva: isExento,
+        monto_iva: ivaItem,
+      };
+    });
 
     const nuevaVenta: Venta = {
       id: newVentaId,
@@ -201,6 +222,10 @@ export default function App() {
       cliente_nombre: cliente.nombre,
       cliente_rif: cliente.rif,
       fecha: new Date().toISOString(),
+      subtotal_neto: subtotalNeto,
+      base_imponible: baseImponible,
+      monto_exento: montoExento,
+      monto_iva: montoIva,
       total: totalVenta,
       metodo_pago: pagoDetalle.metodo,
       referencia_pago: pagoDetalle.referencia_pago_movil,
@@ -228,8 +253,8 @@ export default function App() {
     });
   };
 
-  // Handler: Register new purchase from supplier
-  const handleRegistrarCompra = (compraData: Omit<Compra, 'id'>) => {
+  // Handler: Register new purchase from supplier with itemized invoice lines & catalog sync
+  const handleRegistrarCompra = (compraData: Omit<Compra, 'id'>, newCatalogProducts?: Producto[]) => {
     const newId = compras.length + 1;
     const newCompra: Compra = {
       ...compraData,
@@ -238,20 +263,64 @@ export default function App() {
 
     setCompras([newCompra, ...compras]);
 
-    // Increment inventory in destination branch
-    setInventario((prevInv) => {
-      return prevInv.map((invItem) => {
-        if (invItem.sucursal_id === compraData.sucursalId) {
-          const boughtItem = compraData.detalles.find((d) => d.productoId === invItem.producto_id);
-          if (boughtItem) {
-            return {
-              ...invItem,
-              stock: invItem.stock + boughtItem.cantidad,
-            };
+    // Update or add products in catalog with new cost, selling price (PVP), unit of measure
+    setProductos((prevProds) => {
+      let nextProds = [...prevProds];
+
+      // Add any newly registered products from invoice lines
+      if (newCatalogProducts && newCatalogProducts.length > 0) {
+        newCatalogProducts.forEach((np) => {
+          if (!nextProds.some((p) => p.id === np.id || (p.codigo_barras && p.codigo_barras === np.codigo_barras))) {
+            nextProds.push(np);
           }
+        });
+      }
+
+      // Update costs and PVPs for items in this purchase
+      nextProds = nextProds.map((prod) => {
+        const boughtItem = compraData.detalles.find((d) => d.productoId === prod.id || (d.codigo_barras && d.codigo_barras === prod.codigo_barras));
+        if (boughtItem) {
+          return {
+            ...prod,
+            costo: boughtItem.costoUnitario,
+            precio: (boughtItem.precioVenta && boughtItem.precioVenta > 0) ? boughtItem.precioVenta : prod.precio,
+            unidad_medida: boughtItem.unidad_medida || prod.unidad_medida || 'UND',
+            exento_iva: boughtItem.exentoIva !== undefined ? boughtItem.exentoIva : prod.exento_iva,
+          };
         }
-        return invItem;
+        return prod;
       });
+
+      return nextProds;
+    });
+
+    // Increment inventory in destination branch (or create inventory row if missing)
+    setInventario((prevInv) => {
+      let nextInv = [...prevInv];
+
+      compraData.detalles.forEach((boughtItem) => {
+        const existingIdx = nextInv.findIndex(
+          (i) => i.sucursal_id === compraData.sucursalId && i.producto_id === boughtItem.productoId
+        );
+
+        if (existingIdx >= 0) {
+          const curStock = nextInv[existingIdx].stock || 0;
+          nextInv[existingIdx] = {
+            ...nextInv[existingIdx],
+            stock: +(curStock + boughtItem.cantidad).toFixed(3),
+          };
+        } else {
+          const newInvId = Math.max(...nextInv.map((i) => i.id), 0) + 1;
+          nextInv.push({
+            id: newInvId,
+            sucursal_id: compraData.sucursalId,
+            producto_id: boughtItem.productoId,
+            stock: +boughtItem.cantidad.toFixed(3),
+          });
+        }
+      });
+
+      return nextInv;
     });
 
     // Create automatic CxP if desired
@@ -264,7 +333,7 @@ export default function App() {
         compraId: newId,
         numeroFactura: compraData.numeroFactura || `FAC-${newId}`,
         fechaEmision: compraData.fecha,
-        fechaVencimiento: new Date(Date.now() + 15 * 24 * 3600 * 1000).toISOString(),
+        fechaVencimiento: compraData.fechaVencimiento || new Date(Date.now() + 15 * 24 * 3600 * 1000).toISOString(),
         montoTotal: compraData.total,
         saldoRestante: compraData.total,
         estado: 'pendiente',
@@ -274,7 +343,7 @@ export default function App() {
 
       // Update provider balance
       setProveedores((prev) =>
-        prev.map((p) => (p.id === prov.id ? { ...p, saldoPendiente: p.saldoPendiente + compraData.total } : p))
+        prev.map((p) => (p.id === prov.id ? { ...p, saldoPendiente: +(p.saldoPendiente + compraData.total).toFixed(2) } : p))
       );
     }
   };
@@ -602,7 +671,22 @@ export default function App() {
               {isGeneralManager && (
                 <button
                   type="button"
-                  onClick={() => downloadStandaloneHtmlFile()}
+                  onClick={() =>
+                    downloadStandaloneHtmlFile({
+                      empresaConfig,
+                      usuarios,
+                      productos,
+                      inventario,
+                      ventas,
+                      compras,
+                      clientes,
+                      proveedores,
+                      cxc: cxcList,
+                      cxp: cxpList,
+                      sucursales,
+                      currentUser,
+                    })
+                  }
                   className="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 font-bold flex items-center gap-1.5 transition-all cursor-pointer text-xs"
                   title="Descargar pos_multisucursal.html (Acceso exclusivo Gerente General)"
                 >
@@ -623,7 +707,7 @@ export default function App() {
           </div>
 
           {/* Module Content */}
-          <main className="flex-1 p-6 max-w-7xl mx-auto w-full">
+          <main className="flex-1 p-4 sm:p-6 max-w-[1680px] mx-auto w-full">
             {!hasAccessToActiveTab ? (
               <div className="bg-slate-900 border border-amber-500/30 rounded-2xl p-8 text-center space-y-4 max-w-xl mx-auto my-12">
                 <div className="w-12 h-12 rounded-2xl bg-amber-500/20 text-amber-400 flex items-center justify-center mx-auto border border-amber-500/30">
@@ -753,7 +837,15 @@ export default function App() {
                 )}
 
                 {/* 8. REPORTES */}
-                {activeTab === 'reportes' && <PdfReportsCenter currentUser={currentUser} />}
+                {activeTab === 'reportes' && (
+                  <PdfReportsCenter
+                    currentUser={currentUser}
+                    ventas={ventas}
+                    sucursales={sucursales}
+                    empresaConfig={empresaConfig}
+                    usuarios={usuarios}
+                  />
+                )}
 
                 {/* 9. CONFIGURACIÓN (PERMISOS, NOMBRES, PIN, EMPRESA) */}
                 {activeTab === 'configuracion' && (
@@ -803,7 +895,22 @@ export default function App() {
             >
               <X className="w-5 h-5" />
             </button>
-            <StandaloneHtmlDownloader />
+            <StandaloneHtmlDownloader
+              liveData={{
+                empresaConfig,
+                usuarios,
+                productos,
+                inventario,
+                ventas,
+                compras,
+                clientes,
+                proveedores,
+                cxc: cxcList,
+                cxp: cxpList,
+                sucursales,
+                currentUser,
+              }}
+            />
           </div>
         </div>
       )}

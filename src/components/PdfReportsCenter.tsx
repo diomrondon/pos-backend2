@@ -18,19 +18,31 @@ import {
   Zap,
   Lock,
   ArrowRight,
-  Code
+  Code,
+  Receipt
 } from 'lucide-react';
 import { StandaloneHtmlDownloader } from './StandaloneHtmlDownloader';
+import { FiscalCortesView } from './FiscalCortesView';
 import { downloadStandaloneHtmlFile } from '../lib/downloadHtml';
-import { Usuario } from '../types';
+import { Usuario, Venta, Sucursal, EmpresaConfig } from '../types';
 
 interface PdfReportsCenterProps {
   currentUser?: Usuario | null;
+  ventas?: Venta[];
+  sucursales?: Sucursal[];
+  empresaConfig?: EmpresaConfig;
+  usuarios?: Usuario[];
 }
 
-export const PdfReportsCenter: React.FC<PdfReportsCenterProps> = ({ currentUser }) => {
+export const PdfReportsCenter: React.FC<PdfReportsCenterProps> = ({
+  currentUser,
+  ventas = [],
+  sucursales = [],
+  empresaConfig,
+  usuarios = [],
+}) => {
   const isGeneralManager = currentUser?.rol === 'admin';
-  const [activeDoc, setActiveDoc] = useState<'gerencia' | 'tecnico' | 'html'>('gerencia');
+  const [activeDoc, setActiveDoc] = useState<'cortes' | 'gerencia' | 'tecnico' | 'html'>('cortes');
   const [generatingPdf, setGeneratingPdf] = useState(false);
 
   // Function to generate the Technical PDF using jsPDF
@@ -469,6 +481,18 @@ export const PdfReportsCenter: React.FC<PdfReportsCenterProps> = ({ currentUser 
         {/* Tab Toggle for On-Screen Reading */}
         <div className="flex flex-wrap items-center gap-2 mt-6 pt-4 border-t border-slate-800">
           <button
+            onClick={() => setActiveDoc('cortes')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              activeDoc === 'cortes'
+                ? 'bg-emerald-500 text-slate-950 font-extrabold shadow-md shadow-emerald-500/20'
+                : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800'
+            }`}
+          >
+            <Receipt className="w-4 h-4" />
+            1. Cortes Fiscales de Caja (Corte X & Z)
+          </button>
+
+          <button
             onClick={() => setActiveDoc('gerencia')}
             className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
               activeDoc === 'gerencia'
@@ -477,7 +501,7 @@ export const PdfReportsCenter: React.FC<PdfReportsCenterProps> = ({ currentUser 
             }`}
           >
             <Briefcase className="w-4 h-4" />
-            1. Presentación para Gerencia General (No Técnico)
+            2. Presentación para Gerencia General
           </button>
 
           <button
@@ -489,7 +513,7 @@ export const PdfReportsCenter: React.FC<PdfReportsCenterProps> = ({ currentUser 
             }`}
           >
             <Code2 className="w-4 h-4" />
-            2. Informe Técnico Detallado (Arquitectura & SQL)
+            3. Informe Técnico Detallado (Arquitectura & SQL)
           </button>
 
           {isGeneralManager && (
@@ -502,7 +526,7 @@ export const PdfReportsCenter: React.FC<PdfReportsCenterProps> = ({ currentUser 
               }`}
             >
               <Code className="w-4 h-4" />
-              3. Archivo Único Autónomo (pos_multisucursal.html)
+              4. Archivo Único Autónomo (.html)
             </button>
           )}
         </div>
@@ -510,6 +534,19 @@ export const PdfReportsCenter: React.FC<PdfReportsCenterProps> = ({ currentUser 
 
       {/* DOCUMENT PREVIEW CONTAINER */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl">
+        {/* DOCUMENT 0: CORTES FISCALES X & Z */}
+        {activeDoc === 'cortes' && (
+          <div className="p-4 sm:p-6">
+            <FiscalCortesView
+              ventas={ventas}
+              sucursales={sucursales}
+              empresaConfig={empresaConfig}
+              usuarios={usuarios}
+              currentUser={currentUser}
+            />
+          </div>
+        )}
+
         {/* DOCUMENT 1: GERENCIA GENERAL */}
         {activeDoc === 'gerencia' && (
           <div className="p-6 sm:p-10 space-y-8 max-w-4xl mx-auto">

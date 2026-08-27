@@ -10,6 +10,8 @@ export interface Producto {
   nombre: string;
   precio: number;
   costo?: number;
+  unidad_medida?: 'UND' | 'KG' | 'L' | 'PQ' | string; // Presentación: Unidad/Pieza, Kilogramo, Litro, Paquete
+  exento_iva?: boolean; // true = Exento de IVA (0%), false/undefined = Gravado con IVA (16%)
 }
 
 export interface InventarioItem {
@@ -44,13 +46,19 @@ export interface Usuario {
 }
 
 export interface DetallePagoVenta {
-  metodo: 'pago_movil' | 'efectivo_usd' | 'efectivo_bs' | 'mixto';
+  metodo: 'pago_movil' | 'efectivo_usd' | 'efectivo_bs' | 'tarjeta' | 'mixto';
   referencia_pago_movil?: string;
   monto_usd: number;
   monto_bs: number;
   efectivo_usd_recibido?: number;
   efectivo_bs_recibido?: number;
   pago_movil_monto_bs?: number;
+  tarjeta_tipo?: 'debito' | 'credito' | 'internacional';
+  tarjeta_banco?: string;
+  tarjeta_referencia?: string;
+  tarjeta_lote?: string;
+  tarjeta_monto_bs?: number;
+  tarjeta_monto_usd?: number;
   vuelto_usd?: number;
   vuelto_bs?: number;
 }
@@ -64,6 +72,10 @@ export interface Venta {
   cliente_nombre?: string;
   cliente_rif?: string;
   fecha: string;
+  subtotal_neto?: number;
+  base_imponible?: number;
+  monto_exento?: number;
+  monto_iva?: number;
   total: number;
   metodo_pago?: string;
   referencia_pago?: string;
@@ -76,9 +88,13 @@ export interface DetalleVenta {
   venta_id: number;
   producto_id: number;
   producto_nombre: string;
+  codigo_barras?: string;
+  unidad_medida?: string;
   cantidad: number;
   precio_unitario: number;
   subtotal: number;
+  exento_iva?: boolean;
+  monto_iva?: number;
 }
 
 export interface Cliente {
@@ -104,23 +120,37 @@ export interface Proveedor {
   saldoPendiente: number; // en USD
 }
 
+export interface DetalleCompra {
+  productoId: number;
+  productoNombre: string;
+  codigo_barras?: string;
+  unidad_medida?: 'UND' | 'KG' | 'L' | 'PQ' | string;
+  cantidad: number; // admite fracciones / decimales
+  costoUnitario: number;
+  precioVenta?: number; // PVP venta al público
+  subtotal: number;
+  exentoIva?: boolean;
+  montoIva?: number;
+}
+
 export interface Compra {
   id: number;
   proveedorId: number;
   proveedorNombre: string;
   sucursalId: number;
   numeroFactura?: string;
+  numeroControl?: string;
   fecha: string;
+  fechaVencimiento?: string;
+  condicionPago?: 'credito' | 'contado';
+  subtotalNeto?: number;
+  baseImponible?: number;
+  montoExento?: number;
+  montoIva?: number;
   total: number;
   estado: 'completada' | 'pendiente';
   usuarioNombre?: string;
-  detalles: {
-    productoId: number;
-    productoNombre: string;
-    cantidad: number;
-    costoUnitario: number;
-    subtotal: number;
-  }[];
+  detalles: DetalleCompra[];
 }
 
 export interface AbonoCxC {

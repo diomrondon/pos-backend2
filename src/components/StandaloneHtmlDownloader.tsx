@@ -1,37 +1,31 @@
 import React, { useState } from 'react';
-import { Download, Copy, Check, Eye, Code, CheckCircle2, ShieldCheck, Sparkles } from 'lucide-react';
-import { STANDALONE_HTML_SOURCE } from '../data/standaloneHtmlSource';
+import { Download, Copy, Check, Eye, Code, CheckCircle2, ShieldCheck, Sparkles, Users, TrendingUp, Building2 } from 'lucide-react';
+import { AppExportData, downloadStandaloneHtmlFile, generateLiveStandaloneHtml } from '../lib/downloadHtml';
 
-export const StandaloneHtmlDownloader: React.FC = () => {
+interface StandaloneHtmlDownloaderProps {
+  liveData?: AppExportData;
+}
+
+export const StandaloneHtmlDownloader: React.FC<StandaloneHtmlDownloaderProps> = ({ liveData }) => {
   const [copied, setCopied] = useState(false);
   const [showCode, setShowCode] = useState(false);
 
-  // Download directly from in-memory Blob (100% independent from Google session)
+  // Generate dynamic HTML containing latest live state
+  const finalHtmlCode = generateLiveStandaloneHtml(liveData);
+
   const handleDownloadBlob = () => {
-    try {
-      const blob = new Blob([STANDALONE_HTML_SOURCE], { type: 'text/html;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = 'pos_multisucursal.html';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-    } catch (e) {
-      console.error('Error downloading blob:', e);
-    }
+    downloadStandaloneHtmlFile(liveData, 'pos_multisucursal.html');
   };
 
   const handleCopyCode = async () => {
     try {
-      await navigator.clipboard.writeText(STANDALONE_HTML_SOURCE);
+      await navigator.clipboard.writeText(finalHtmlCode);
       setCopied(true);
       setTimeout(() => setCopied(false), 2500);
     } catch (e) {
       // Fallback
       const textArea = document.createElement('textarea');
-      textArea.value = STANDALONE_HTML_SOURCE;
+      textArea.value = finalHtmlCode;
       document.body.appendChild(textArea);
       textArea.select();
       document.execCommand('copy');
@@ -41,8 +35,12 @@ export const StandaloneHtmlDownloader: React.FC = () => {
     }
   };
 
+  const userCount = liveData?.usuarios?.length || 6;
+  const companyName = liveData?.empresaConfig?.nombreEmpresa || 'Corporación Los Andes C.A.';
+  const currentTasa = liveData?.empresaConfig?.tasaCambio || 36.50;
+
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-5 shadow-xl">
+    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-5 shadow-xl text-slate-100">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-5">
         <div className="flex items-start gap-3.5">
           <div className="bg-emerald-500/20 text-emerald-400 p-3 rounded-2xl border border-emerald-500/30 shrink-0">
@@ -52,11 +50,11 @@ export const StandaloneHtmlDownloader: React.FC = () => {
             <div className="flex items-center gap-2">
               <h3 className="font-bold text-white text-base">Archivo Único: pos_multisucursal.html</h3>
               <span className="bg-emerald-500/20 text-emerald-400 text-[10px] font-bold px-2 py-0.5 rounded-full border border-emerald-500/30">
-                100% Autónomo
+                100% Autónomo & Sincronizado
               </span>
             </div>
             <p className="text-xs text-slate-400 mt-1 max-w-xl leading-relaxed">
-              Descarga directa en memoria local. Puedes guardarlo en tus computadoras de caja, teléfonos o tablets y abrirlo con doble clic en Chrome, Edge o Safari.
+              El archivo descargado incluye todos los datos y configuraciones que acabas de modificar (tus {userCount} usuarios con sus permisos individuales, PINs, tasa de cambio y datos fiscales). Ábrelo directamente con doble clic en cualquier navegador.
             </p>
           </div>
         </div>
@@ -97,11 +95,27 @@ export const StandaloneHtmlDownloader: React.FC = () => {
         </div>
       </div>
 
+      {/* Snapshot badges */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 bg-slate-950 p-3 rounded-xl border border-slate-800 text-xs">
+        <div className="flex items-center gap-2 text-slate-300">
+          <Users className="w-4 h-4 text-emerald-400 shrink-0" />
+          <span><strong>{userCount} Colaboradores</strong> con permisos RBAC</span>
+        </div>
+        <div className="flex items-center gap-2 text-slate-300">
+          <TrendingUp className="w-4 h-4 text-amber-400 shrink-0" />
+          <span>Tasa incorporada: <strong>Bs. {currentTasa.toFixed(2)} / USD</strong></span>
+        </div>
+        <div className="flex items-center gap-2 text-slate-300 truncate">
+          <Building2 className="w-4 h-4 text-purple-400 shrink-0" />
+          <span className="truncate">Razón Social: <strong>{companyName}</strong></span>
+        </div>
+      </div>
+
       {showCode && (
         <div className="space-y-2 bg-slate-950 p-4 rounded-xl border border-slate-800">
           <div className="flex items-center justify-between text-xs text-slate-400 pb-2 border-b border-slate-800">
             <span className="font-mono flex items-center gap-1.5">
-              <Code className="w-4 h-4 text-emerald-400" /> pos_multisucursal.html (Código completo sin dependencias)
+              <Code className="w-4 h-4 text-emerald-400" /> pos_multisucursal.html (Código autónomo completo)
             </span>
             <button
               onClick={handleCopyCode}
@@ -111,7 +125,7 @@ export const StandaloneHtmlDownloader: React.FC = () => {
             </button>
           </div>
           <pre className="text-[11px] font-mono text-slate-300 max-h-72 overflow-y-auto whitespace-pre-wrap p-2 bg-slate-900/50 rounded-lg">
-            {STANDALONE_HTML_SOURCE}
+            {finalHtmlCode}
           </pre>
         </div>
       )}
@@ -122,16 +136,16 @@ export const StandaloneHtmlDownloader: React.FC = () => {
             <ShieldCheck className="w-4 h-4" /> 100% Cero Costo / Sin Servidor
           </div>
           <p className="text-slate-400 text-[11px] leading-relaxed">
-            Se conecta directamente desde el navegador a tu Supabase mediante HTTPS seguro.
+            Funciona completamente offline o con conexión local. Permisos de módulos protegidos por PIN de 4 dígitos.
           </p>
         </div>
 
         <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800/80 space-y-1.5">
           <div className="font-bold text-emerald-400 flex items-center gap-1.5">
-            <CheckCircle2 className="w-4 h-4" /> Lector USB Plug & Play
+            <CheckCircle2 className="w-4 h-4" /> Lector USB & Cortes Fiscales
           </div>
           <p className="text-slate-400 text-[11px] leading-relaxed">
-            Compatible de inmediato con cualquier pistola lectora de código de barras USB.
+            Punto de Venta con lectura de código de barras, emisión de Corte X, Corte Z e impresión térmica de 80mm.
           </p>
         </div>
 
@@ -140,7 +154,7 @@ export const StandaloneHtmlDownloader: React.FC = () => {
             <CheckCircle2 className="w-4 h-4" /> Tienda 1, Tienda 2 y Oficina
           </div>
           <p className="text-slate-400 text-[11px] leading-relaxed">
-            Sincronización multi-sucursal y control de transferencias de inventario en tiempo real.
+            Control de inventario multi-sucursal y transferencias entre tiendas en tiempo real.
           </p>
         </div>
       </div>
