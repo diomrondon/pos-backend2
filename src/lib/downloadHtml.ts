@@ -11,6 +11,7 @@ import {
   CuentaPorCobrar,
   CuentaPorPagar,
   Sucursal,
+  RegistroAuditoria,
 } from '../types';
 
 export interface AppExportData {
@@ -26,6 +27,7 @@ export interface AppExportData {
   cxp?: CuentaPorPagar[];
   sucursales?: Sucursal[];
   currentUser?: Usuario | null;
+  auditoria?: RegistroAuditoria[];
 }
 
 /**
@@ -185,6 +187,10 @@ export function generateLiveStandaloneHtml(liveData?: AppExportData): string {
         saldoRestante: item.saldoRestante,
         estado: item.estado
       }));
+    }
+
+    if (liveData.auditoria && liveData.auditoria.length > 0) {
+      exportPayload.auditoria = liveData.auditoria;
     }
 
     const serializedData = JSON.stringify(exportPayload, null, 6);

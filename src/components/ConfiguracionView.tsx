@@ -27,10 +27,12 @@ import {
   Eye,
   EyeOff,
   Sparkles,
+  ClipboardList,
 } from 'lucide-react';
-import { Usuario, EmpresaConfig, Sucursal, ModuloPermisos } from '../types';
+import { Usuario, EmpresaConfig, Sucursal, ModuloPermisos, RegistroAuditoria } from '../types';
 import { formatBs } from '../lib/currency';
 import { StandaloneHtmlDownloader } from './StandaloneHtmlDownloader';
+import { AuditoriaView } from './AuditoriaView';
 
 interface ConfiguracionViewProps {
   usuarios: Usuario[];
@@ -41,6 +43,8 @@ interface ConfiguracionViewProps {
   currentUser: Usuario | null;
   onOpenRateModal: () => void;
   onResetAllData?: () => void;
+  auditoriaLogs?: RegistroAuditoria[];
+  onClearAuditoriaLogs?: () => void;
 }
 
 export const ConfiguracionView: React.FC<ConfiguracionViewProps> = ({
@@ -52,10 +56,12 @@ export const ConfiguracionView: React.FC<ConfiguracionViewProps> = ({
   currentUser,
   onOpenRateModal,
   onResetAllData,
+  auditoriaLogs = [],
+  onClearAuditoriaLogs,
 }) => {
   const isGeneralManager = currentUser?.rol === 'admin';
 
-  const [activeSubTab, setActiveSubTab] = useState<'usuarios' | 'empresa' | 'sucursales' | 'tasa' | 'html' | 'reinicio'>('usuarios');
+  const [activeSubTab, setActiveSubTab] = useState<'usuarios' | 'empresa' | 'sucursales' | 'tasa' | 'auditoria' | 'html' | 'reinicio'>('usuarios');
 
   // Reset Modal & Verification State
   const [showResetModal, setShowResetModal] = useState<boolean>(false);
@@ -465,6 +471,29 @@ export const ConfiguracionView: React.FC<ConfiguracionViewProps> = ({
           >
             <TrendingUp className="w-3.5 h-3.5" />
             <span>Cotización Diaria</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveSubTab('auditoria')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
+              activeSubTab === 'auditoria'
+                ? 'bg-emerald-500 text-slate-950 font-bold shadow'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <ClipboardList className="w-3.5 h-3.5" />
+            <span>Bitácora de Auditoría</span>
+            {auditoriaLogs && auditoriaLogs.length > 0 && (
+              <span
+                className={`text-[10px] font-mono px-1.5 py-0.5 rounded-full font-bold ${
+                  activeSubTab === 'auditoria'
+                    ? 'bg-slate-950/30 text-slate-950'
+                    : 'bg-emerald-500/20 text-emerald-300'
+                }`}
+              >
+                {auditoriaLogs.length}
+              </span>
+            )}
           </button>
           <button
             type="button"
@@ -1281,6 +1310,20 @@ export const ConfiguracionView: React.FC<ConfiguracionViewProps> = ({
             sucursales,
             currentUser,
           }}
+        />
+      )}
+
+      {/* ======================================================== */}
+      {/* SUB-TAB: BITÁCORA DE AUDITORÍA Y TRAZABILIDAD */}
+      {/* ======================================================== */}
+      {activeSubTab === 'auditoria' && (
+        <AuditoriaView
+          logs={auditoriaLogs}
+          usuarios={usuarios}
+          sucursales={sucursales}
+          currentUser={currentUser}
+          empresaConfig={empresaConfig}
+          onClearLogs={onClearAuditoriaLogs}
         />
       )}
 

@@ -39,6 +39,7 @@ import {
   CuentaPorCobrar,
   CuentaPorPagar,
   DetallePagoVenta,
+  RegistroAuditoria,
 } from './types';
 import {
   getStoredSupabaseConfig,
@@ -50,6 +51,7 @@ import { getStoredEmpresaConfig, saveEmpresaConfig, hasSetTasaToday, markTasaSet
 import { ShieldAlert, Lock, ShoppingCart, RefreshCw, Download, X, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { StandaloneHtmlDownloader } from './components/StandaloneHtmlDownloader';
 import { downloadStandaloneHtmlFile } from './lib/downloadHtml';
+import { createAuditEntry, INITIAL_AUDITORIA_LOGS } from './lib/auditLogger';
 
 export default function App() {
   // Navigation State (starts in 'ventas' or 'dashboard' if admin)
@@ -74,6 +76,7 @@ export default function App() {
     inventario: 'pos_app_inventario_v2',
     usuarios: 'pos_app_usuarios_v2',
     sucursales: 'pos_app_sucursales_v2',
+    auditoria: 'pos_app_auditoria_v2',
   };
 
   // App State: Users
@@ -169,6 +172,15 @@ export default function App() {
     return INITIAL_CXP;
   });
 
+  // Audit Logs State (Audit trail tracking user actions)
+  const [auditoriaLogs, setAuditoriaLogs] = useState<RegistroAuditoria[]>(() => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEYS.auditoria);
+      if (stored) return JSON.parse(stored);
+    } catch (e) {}
+    return INITIAL_AUDITORIA_LOGS;
+  });
+
   // Correlativos for Fiscal Cuts (X and Z)
   const [correlativoX, setCorrelativoX] = useState<number>(() => {
     try {
@@ -193,6 +205,10 @@ export default function App() {
   useEffect(() => {
     try { localStorage.setItem('pos_correlativo_z', String(correlativoZ)); } catch (e) {}
   }, [correlativoZ]);
+
+  useEffect(() => {
+    try { localStorage.setItem(STORAGE_KEYS.auditoria, JSON.stringify(auditoriaLogs)); } catch(e) {}
+  }, [auditoriaLogs]);
   useEffect(() => {
     try { localStorage.setItem(STORAGE_KEYS.ventas, JSON.stringify(ventas)); } catch(e) {}
   }, [ventas]);
@@ -255,6 +271,23 @@ export default function App() {
     }
   }, [currentUser]);
 
+  // Centralized Audit Logger Helper
+  const logAuditoria = (
+    modulo: RegistroAuditoria['modulo'],
+    tipo_accion: RegistroAuditoria['tipo_accion'],
+    descripcion: string,
+    options?: {
+      detalles?: string;
+      sucursal_nombre?: string;
+      sucursal_id?: number | null;
+      customUser?: Usuario | null;
+    }
+  ) => {
+    const userToLog = options?.customUser !== undefined ? options.customUser : currentUser;
+    const entry = createAuditEntry(userToLog, modulo, tipo_accion, descripcion, options);
+    setAuditoriaLogs((prev) => [entry, ...prev]);
+  };
+
   // Handler: Update company & store configurations
   const handleSaveEmpresaConfig = (updated: EmpresaConfig) => {
     saveEmpresaConfig(updated);
@@ -264,10 +297,19 @@ export default function App() {
       { id: 2, nombre: updated.nombreTienda2, tipo: 'tienda' },
       { id: 3, nombre: updated.nombreOficina, tipo: 'oficina' },
     ]);
+    logAuditoria(
+      'Configuración',
+      'MODIFICAR',
+      `Actualización de datos de la empresa: "${updated.nombreEmpresa}" (RIF: ${updated.rif})`,
+      {
+        detalles: `Dirección: ${updated.direccionFiscal}, Tel: ${updated.telefono}. Sucursales: ${updated.nombreTienda1}, ${updated.nombreTienda2}, ${updated.nombreOficina}`,
+      }
+    );
   };
 
   // Handler: Update daily exchange rate
   const handleSaveTasa = (nuevaTasa: number) => {
+    const tasaAnterior = empresaConfig.tasaCambio;
     const updated: EmpresaConfig = {
       ...empresaConfig,
       tasaCambio: nuevaTasa,
@@ -277,6 +319,14 @@ export default function App() {
     saveEmpresaConfig(updated);
     markTasaSetToday();
     setEmpresaConfig(updated);
+    logAuditoria(
+      'Tasa de Cambio',
+      'MODIFICAR',
+      `Fijación de tasa oficial: 1 USD = ${nuevaTasa.toFixed(2)} Bs (Antes: ${tasaAnterior.toFixed(2)} Bs)`,
+      {
+        detalles: `Tasa aplicada al sistema en fecha ${new Date().toLocaleDateString('es-VE')}`,
+      }
+    );
   };
 
   // Sync with real Supabase if credentials are provided
@@ -409,6 +459,19 @@ export default function App() {
     // Update sales history locally (Immediate offline-first persistence)
     setVentas([nuevaVenta, ...ventas]);
 
+    // Audit Logging
+    const sucursalName = sucursales.find((s) => s.id === sucursalId)?.nombre || `Sucursal #${sucursalId}`;
+    logAuditoria(
+      'POS / Ventas',
+      'VENTA',
+      `Venta POS #${nuevaVenta.id} registrada en ${sucursalName} por ${formatUSD(totalVenta)} (${formatBs(totalVenta, empresaConfig.tasaCambio)}) [Método: ${pagoDetalle.metodo}]`,
+      {
+        sucursal_id: sucursalId,
+        sucursal_nombre: sucursalName,
+        detalles: `Cliente: "${cliente.nombre}" (${cliente.rif || 'S/N'}). Items: ${items.map((i) => `${i.cantidad}x ${i.producto.nombre}`).join(', ')}. Base: $${baseImponible}, IVA: $${montoIva}, Exento: $${montoExento}`,
+      }
+    );
+
     // Queue for Supabase cloud sync
     addToSyncQueue('ventas', 'insert', {
       sucursal_id: sucursalId,
@@ -468,6 +531,18 @@ export default function App() {
     };
 
     setCompras([newCompra, ...compras]);
+
+    const sucursalDest = sucursales.find((s) => s.id === compraData.sucursalId)?.nombre || `Sucursal #${compraData.sucursalId}`;
+    logAuditoria(
+      'Compras',
+      'COMPRA',
+      `Factura de compra #${compraData.numeroFactura || newId} registrada a proveedor "${compraData.proveedorNombre}" por ${formatUSD(compraData.total)} (${compraData.detalles.length} renglones)`,
+      {
+        sucursal_id: compraData.sucursalId,
+        sucursal_nombre: sucursalDest,
+        detalles: `Destino: ${sucursalDest}. Items: ${compraData.detalles.map((d) => `${d.cantidad}x ${d.productoNombre} (Costo: $${d.costoUnitario})`).join(', ')}`,
+      }
+    );
 
     // Update or add products in catalog with new cost, selling price (PVP), unit of measure
     setProductos((prevProds) => {
@@ -568,6 +643,10 @@ export default function App() {
       return false;
     }
 
+    const prodObj = productos.find((p) => p.id === productoId);
+    const origBranch = sucursales.find((s) => s.id === origenId)?.nombre || `Sucursal #${origenId}`;
+    const destBranch = sucursales.find((s) => s.id === destinoId)?.nombre || `Sucursal #${destinoId}`;
+
     setInventario((prev) => {
       // Deduct from origen
       let next = prev.map((item) => {
@@ -602,6 +681,15 @@ export default function App() {
       return next;
     });
 
+    logAuditoria(
+      'Inventario',
+      'TRASPASO',
+      `Traspaso de stock: ${cantidad} und de "${prodObj?.nombre || 'Producto #' + productoId}" desde ${origBranch} hacia ${destBranch}`,
+      {
+        detalles: `Stock origen anterior: ${origenItem.stock}, nuevo stock origen: ${origenItem.stock - cantidad}`,
+      }
+    );
+
     return true;
   };
 
@@ -630,28 +718,70 @@ export default function App() {
       { id: Math.max(...prev.map((i) => i.id), 0) + 2, sucursal_id: 2, producto_id: newProdId, stock: 0 },
       { id: Math.max(...prev.map((i) => i.id), 0) + 3, sucursal_id: 3, producto_id: newProdId, stock: stockOficina },
     ]);
+
+    logAuditoria(
+      'Inventario',
+      'CREAR',
+      `Creación de nuevo producto en catálogo: "${nombre}" (PVP: ${formatUSD(precio)}, Costo: ${formatUSD(costo)})`,
+      {
+        detalles: `Código de barras: ${codigoBarras || 'N/A'}. Stock inicial en almacén central: ${stockOficina} und`,
+      }
+    );
   };
 
   // Handler: Update product
   const handleUpdateProduct = (updated: Producto) => {
     setProductos((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+    logAuditoria(
+      'Inventario',
+      'MODIFICAR',
+      `Modificación de producto: "${updated.nombre}" (PVP: ${formatUSD(updated.precio)})`,
+      {
+        detalles: `Costo: ${formatUSD(updated.costo || 0)}, Código: ${updated.codigo_barras || 'N/A'}, Exento IVA: ${updated.exento_iva ? 'Sí' : 'No'}`,
+      }
+    );
   };
 
   // Handler: Delete product
   const handleDeleteProduct = (productId: number) => {
+    const targetProd = productos.find((p) => p.id === productId);
     setProductos((prev) => prev.filter((p) => p.id !== productId));
     setInventario((prev) => prev.filter((i) => i.producto_id !== productId));
+    logAuditoria(
+      'Inventario',
+      'ELIMINAR',
+      `Eliminación de producto del catálogo: "${targetProd?.nombre || 'ID #' + productId}"`,
+      {
+        detalles: `Código: ${targetProd?.codigo_barras || 'N/A'}, PVP: ${formatUSD(targetProd?.precio || 0)}`,
+      }
+    );
   };
 
   // Handler: Add Client
   const handleAddCliente = (newCliente: Omit<Cliente, 'id'>) => {
     const id = Date.now();
     setClientes([...clientes, { ...newCliente, id }]);
+    logAuditoria(
+      'Clientes',
+      'CREAR',
+      `Registro de nuevo cliente: "${newCliente.nombre}" (${newCliente.rif_cedula})`,
+      {
+        detalles: `Teléfono: ${newCliente.telefono || 'N/A'}, Límite crédito: ${formatUSD(newCliente.limiteCredito || 0)}`,
+      }
+    );
   };
 
   // Handler: Update Client
   const handleUpdateCliente = (updated: Cliente) => {
     setClientes(clientes.map((c) => (c.id === updated.id ? updated : c)));
+    logAuditoria(
+      'Clientes',
+      'MODIFICAR',
+      `Actualización de datos del cliente: "${updated.nombre}" (${updated.rif_cedula})`,
+      {
+        detalles: `Tel: ${updated.telefono}, Email: ${updated.email || 'N/A'}, Límite: ${formatUSD(updated.limiteCredito || 0)}`,
+      }
+    );
   };
 
   // Handler: Delete Client
@@ -662,6 +792,11 @@ export default function App() {
       return false;
     }
     setClientes((prev) => prev.filter((c) => c.id !== id));
+    logAuditoria(
+      'Clientes',
+      'ELIMINAR',
+      `Eliminación de cliente: "${client?.nombre || 'ID #' + id}" (${client?.rif_cedula})`
+    );
     return true;
   };
 
@@ -669,11 +804,27 @@ export default function App() {
   const handleAddProveedor = (newProv: Omit<Proveedor, 'id'>) => {
     const id = Date.now();
     setProveedores([...proveedores, { ...newProv, id }]);
+    logAuditoria(
+      'Proveedores',
+      'CREAR',
+      `Registro de nuevo proveedor: "${newProv.nombre}" (${newProv.rif})`,
+      {
+        detalles: `Contacto: ${newProv.contacto || 'N/A'}, Tel: ${newProv.telefono || 'N/A'}`,
+      }
+    );
   };
 
   // Handler: Update Supplier
   const handleUpdateProveedor = (updated: Proveedor) => {
     setProveedores(proveedores.map((p) => (p.id === updated.id ? updated : p)));
+    logAuditoria(
+      'Proveedores',
+      'MODIFICAR',
+      `Actualización de datos del proveedor: "${updated.nombre}" (${updated.rif})`,
+      {
+        detalles: `Contacto: ${updated.contacto || 'N/A'}, Tel: ${updated.telefono || 'N/A'}`,
+      }
+    );
   };
 
   // Handler: Delete Supplier
@@ -684,11 +835,18 @@ export default function App() {
       return false;
     }
     setProveedores((prev) => prev.filter((p) => p.id !== id));
+    logAuditoria(
+      'Proveedores',
+      'ELIMINAR',
+      `Eliminación de proveedor: "${prov?.nombre || 'ID #' + id}" (${prov?.rif})`
+    );
     return true;
   };
 
   // Handler: Register CxC Abono (payment from client)
   const handleRegistrarAbonoCxc = (cxcId: number, monto: number, metodo: string, referencia?: string) => {
+    const targetCxc = cxcList.find((c) => c.id === cxcId);
+
     setCxcList((prev) =>
       prev.map((item) => {
         if (item.id === cxcId) {
@@ -714,7 +872,6 @@ export default function App() {
     );
 
     // Update client balance
-    const targetCxc = cxcList.find((c) => c.id === cxcId);
     if (targetCxc) {
       setClientes((prev) =>
         prev.map((cl) =>
@@ -722,6 +879,14 @@ export default function App() {
             ? { ...cl, saldoPendiente: Math.max(0, cl.saldoPendiente - monto) }
             : cl
         )
+      );
+      logAuditoria(
+        'CxC',
+        'ABONO',
+        `Abono de ${formatUSD(monto)} recibido de "${targetCxc.clienteNombre}" para cuenta #${targetCxc.id} (${targetCxc.concepto}) [${metodo}]`,
+        {
+          detalles: `Saldo restante: ${formatUSD(Math.max(0, targetCxc.saldoRestante - monto))}. Ref: ${referencia || 'N/A'}`,
+        }
       );
     }
   };
@@ -740,10 +905,20 @@ export default function App() {
         c.id === cxcData.clienteId ? { ...c, saldoPendiente: c.saldoPendiente + cxcData.montoTotal } : c
       )
     );
+    logAuditoria(
+      'CxC',
+      'CREAR',
+      `Nueva cuenta por cobrar emitida a "${cxcData.clienteNombre}" por ${formatUSD(cxcData.montoTotal)} (Concepto: ${cxcData.concepto})`,
+      {
+        detalles: `Vence: ${new Date(cxcData.fechaVencimiento).toLocaleDateString('es-VE')}`,
+      }
+    );
   };
 
   // Handler: Register CxP Pago (payment to supplier)
   const handleRegistrarPagoCxp = (cxpId: number, monto: number, metodo: string, referencia?: string) => {
+    const targetCxp = cxpList.find((c) => c.id === cxpId);
+
     setCxpList((prev) =>
       prev.map((item) => {
         if (item.id === cxpId) {
@@ -769,7 +944,6 @@ export default function App() {
     );
 
     // Update supplier balance
-    const targetCxp = cxpList.find((c) => c.id === cxpId);
     if (targetCxp) {
       setProveedores((prev) =>
         prev.map((pr) =>
@@ -777,6 +951,14 @@ export default function App() {
             ? { ...pr, saldoPendiente: Math.max(0, pr.saldoPendiente - monto) }
             : pr
         )
+      );
+      logAuditoria(
+        'CxP',
+        'PAGO',
+        `Pago de ${formatUSD(monto)} registrado al proveedor "${targetCxp.proveedorNombre}" para factura #${targetCxp.numeroFactura} [${metodo}]`,
+        {
+          detalles: `Saldo restante: ${formatUSD(Math.max(0, targetCxp.saldoRestante - monto))}. Ref: ${referencia || 'N/A'}`,
+        }
       );
     }
   };
@@ -794,6 +976,14 @@ export default function App() {
       prev.map((p) =>
         p.id === cxpData.proveedorId ? { ...p, saldoPendiente: p.saldoPendiente + cxpData.montoTotal } : p
       )
+    );
+    logAuditoria(
+      'CxP',
+      'CREAR',
+      `Nueva cuenta por pagar registrada de proveedor "${cxpData.proveedorNombre}" por ${formatUSD(cxpData.montoTotal)} (Doc: ${cxpData.numeroFactura})`,
+      {
+        detalles: `Vence: ${new Date(cxpData.fechaVencimiento).toLocaleDateString('es-VE')}`,
+      }
     );
   };
 
@@ -885,6 +1075,17 @@ export default function App() {
     setCxcList(cleanCxc);
     setCxpList(cleanCxp);
 
+    const resetAuditEntry = createAuditEntry(
+      cleanUsuarios[0],
+      'Configuración',
+      'RESET',
+      'Restablecimiento total del sistema a valores de fábrica',
+      {
+        detalles: 'Se limpiaron todas las ventas, compras, productos, inventario, clientes y proveedores.',
+      }
+    );
+    setAuditoriaLogs([resetAuditEntry]);
+
     // Save cleaned database to local storage immediately
     try {
       localStorage.setItem(STORAGE_KEYS.ventas, JSON.stringify(cleanVentas));
@@ -897,6 +1098,7 @@ export default function App() {
       localStorage.setItem(STORAGE_KEYS.inventario, JSON.stringify(cleanInventario));
       localStorage.setItem(STORAGE_KEYS.usuarios, JSON.stringify(cleanUsuarios));
       localStorage.setItem(STORAGE_KEYS.sucursales, JSON.stringify(cleanSucursales));
+      localStorage.setItem(STORAGE_KEYS.auditoria, JSON.stringify([resetAuditEntry]));
       localStorage.setItem('pos_correlativo_x', '0');
       localStorage.setItem('pos_correlativo_z', '0');
     } catch (e) {}
@@ -917,8 +1119,33 @@ export default function App() {
         currentUser={currentUser}
         usuarios={usuarios}
         sucursales={sucursales}
-        onSelectUser={(u) => setCurrentUser(u)}
-        onLogout={() => setCurrentUser(null)}
+        onSelectUser={(u) => {
+          if (u && (!currentUser || currentUser.id !== u.id)) {
+            logAuditoria(
+              'Usuarios',
+              'LOGIN',
+              `Inicio de sesión / Cambio de usuario a: "${u.nombre_completo}" (${u.rol.toUpperCase()})`,
+              {
+                customUser: u,
+                detalles: `Cargo: ${u.cargo || 'Operador'}. Sucursal asignada: ${sucursales.find((s) => s.id === u.sucursal_id)?.nombre || 'Todas'}`,
+              }
+            );
+          }
+          setCurrentUser(u);
+        }}
+        onLogout={() => {
+          if (currentUser) {
+            logAuditoria(
+              'Usuarios',
+              'LOGOUT',
+              `Cierre de sesión de usuario "${currentUser.nombre_completo}"`,
+              {
+                customUser: currentUser,
+              }
+            );
+          }
+          setCurrentUser(null);
+        }}
         onOpenHtmlModal={() => setShowHtmlModal(true)}
       />
 
@@ -1159,22 +1386,60 @@ export default function App() {
                     usuarios={usuarios}
                     correlativoX={correlativoX}
                     correlativoZ={correlativoZ}
-                    onIncrementCorrelativoX={() => setCorrelativoX((prev) => prev + 1)}
-                    onIncrementCorrelativoZ={() => setCorrelativoZ((prev) => prev + 1)}
+                    onIncrementCorrelativoX={() => {
+                      const next = correlativoX + 1;
+                      setCorrelativoX(next);
+                      logAuditoria(
+                        'Reportes / Fiscal',
+                        'CORTE_X',
+                        `Generación de Corte Fiscal Parcial X #${next}`,
+                        { detalles: `Emitido por ${currentUser?.nombre_completo || 'Usuario'}` }
+                      );
+                    }}
+                    onIncrementCorrelativoZ={() => {
+                      const next = correlativoZ + 1;
+                      setCorrelativoZ(next);
+                      logAuditoria(
+                        'Reportes / Fiscal',
+                        'CORTE_Z',
+                        `Cierre Diario Definitivo - Corte Fiscal Z #${next}`,
+                        { detalles: `Emitido y correlativo bloqueado por ${currentUser?.nombre_completo || 'Usuario'}` }
+                      );
+                    }}
                   />
                 )}
 
-                {/* 9. CONFIGURACIÓN (PERMISOS, NOMBRES, PIN, EMPRESA) */}
+                {/* 9. CONFIGURACIÓN (PERMISOS, NOMBRES, PIN, EMPRESA, AUDITORÍA) */}
                 {activeTab === 'configuracion' && (
                   <ConfiguracionView
                     usuarios={usuarios}
-                    onUpdateUsuarios={(updated) => setUsuarios(updated)}
+                    onUpdateUsuarios={(updated) => {
+                      setUsuarios(updated);
+                      logAuditoria(
+                        'Usuarios',
+                        'MODIFICAR',
+                        `Actualización de la nómina de usuarios y permisos (${updated.length} usuarios)`,
+                        {
+                          detalles: updated.map((u) => `${u.nombre_completo} (${u.username}, ${u.rol})`).join('; '),
+                        }
+                      );
+                    }}
                     empresaConfig={empresaConfig}
                     onSaveEmpresaConfig={handleSaveEmpresaConfig}
                     sucursales={sucursales}
                     currentUser={currentUser}
                     onOpenRateModal={() => setShowDailyRateModal(true)}
                     onResetAllData={handleResetAllData}
+                    auditoriaLogs={auditoriaLogs}
+                    onClearAuditoriaLogs={() => {
+                      const entry = createAuditEntry(
+                        currentUser,
+                        'Auditoría',
+                        'LIMPIAR',
+                        'Vaciado y limpieza del historial de auditoría'
+                      );
+                      setAuditoriaLogs([entry]);
+                    }}
                   />
                 )}
               </>
@@ -1227,6 +1492,7 @@ export default function App() {
                 cxp: cxpList,
                 sucursales,
                 currentUser,
+                auditoria: auditoriaLogs,
               }}
             />
           </div>

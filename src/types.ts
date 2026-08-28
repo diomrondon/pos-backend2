@@ -213,3 +213,52 @@ export interface EmpresaConfig {
   nombreOficina: string;
 }
 
+export interface RegistroAuditoria {
+  id: string;
+  fecha: string; // YYYY-MM-DD o DD/MM/YYYY
+  hora: string; // HH:mm:ss AM/PM
+  timestamp: string; // ISO String for ordering
+  usuario_id?: number;
+  usuario_nombre: string;
+  usuario_username?: string;
+  usuario_rol: string;
+  usuario_cargo?: string;
+  sucursal_id?: number | null;
+  sucursal_nombre?: string;
+  modulo:
+    | 'POS / Ventas'
+    | 'Inventario'
+    | 'Compras'
+    | 'Clientes'
+    | 'Proveedores'
+    | 'CxC'
+    | 'CxP'
+    | 'Reportes / Fiscal'
+    | 'Configuración'
+    | 'Seguridad'
+    | 'Tasa de Cambio'
+    | 'Usuarios'
+    | 'Auditoría';
+  tipo_accion:
+    | 'CREAR'
+    | 'MODIFICAR'
+    | 'ELIMINAR'
+    | 'VENTA'
+    | 'COMPRA'
+    | 'TRASPASO'
+    | 'COBRO'
+    | 'PAGO'
+    | 'CORTE_FISCAL'
+    | 'ACCESO'
+    | 'SISTEMA'
+    | 'LOGIN'
+    | 'LOGOUT'
+    | 'RESET'
+    | 'LIMPIAR'
+    | 'ABONO'
+    | 'CORTE_X'
+    | 'CORTE_Z';
+  descripcion: string;
+  detalles?: string;
+}
+
