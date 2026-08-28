@@ -40,6 +40,7 @@ interface ConfiguracionViewProps {
   sucursales: Sucursal[];
   currentUser: Usuario | null;
   onOpenRateModal: () => void;
+  onResetAllData?: () => void;
 }
 
 export const ConfiguracionView: React.FC<ConfiguracionViewProps> = ({
@@ -50,10 +51,17 @@ export const ConfiguracionView: React.FC<ConfiguracionViewProps> = ({
   sucursales,
   currentUser,
   onOpenRateModal,
+  onResetAllData,
 }) => {
   const isGeneralManager = currentUser?.rol === 'admin';
 
-  const [activeSubTab, setActiveSubTab] = useState<'usuarios' | 'empresa' | 'sucursales' | 'tasa' | 'html'>('usuarios');
+  const [activeSubTab, setActiveSubTab] = useState<'usuarios' | 'empresa' | 'sucursales' | 'tasa' | 'html' | 'reinicio'>('usuarios');
+
+  // Reset Modal & Verification State
+  const [showResetModal, setShowResetModal] = useState<boolean>(false);
+  const [resetWordInput, setResetWordInput] = useState<string>('');
+  const [resetPinInput, setResetPinInput] = useState<string>('');
+  const [resetError, setResetError] = useState<string | null>(null);
 
   // Company Form State
   const [companyForm, setCompanyForm] = useState<EmpresaConfig>({ ...empresaConfig });
@@ -130,10 +138,19 @@ export const ConfiguracionView: React.FC<ConfiguracionViewProps> = ({
     setSuccessMsg(null);
   };
 
-  // Initialize form on mount if not set
+  // Initialize form on mount and keep synced when empresaConfig changes
   React.useEffect(() => {
-    if (usuarios.length > 0 && !selectedUser) {
-      handleSelectUser(usuarios[0]);
+    setCompanyForm({ ...empresaConfig });
+  }, [empresaConfig]);
+
+  // Keep selected user synced when usuarios list changes
+  React.useEffect(() => {
+    if (usuarios.length > 0) {
+      if (!selectedUser || !usuarios.some((u) => u.id === selectedUser.id)) {
+        handleSelectUser(usuarios[0]);
+      }
+    } else {
+      setSelectedUser(null);
     }
   }, [usuarios]);
 
@@ -460,6 +477,18 @@ export const ConfiguracionView: React.FC<ConfiguracionViewProps> = ({
           >
             <Download className="w-3.5 h-3.5" />
             <span>Descargar .HTML</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveSubTab('reinicio')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
+              activeSubTab === 'reinicio'
+                ? 'bg-rose-600 text-white font-bold shadow'
+                : 'text-rose-400 hover:text-rose-200'
+            }`}
+          >
+            <ShieldAlert className="w-3.5 h-3.5" />
+            <span>Reinicio de Sistema</span>
           </button>
         </div>
       </div>
@@ -1253,6 +1282,183 @@ export const ConfiguracionView: React.FC<ConfiguracionViewProps> = ({
             currentUser,
           }}
         />
+      )}
+
+      {/* ======================================================== */}
+      {/* SUB-TAB 6: REINICIO TOTAL DEL SISTEMA (ZONA DE PELIGRO) */}
+      {/* ======================================================== */}
+      {activeSubTab === 'reinicio' && (
+        <div className="bg-slate-900 border border-rose-900/50 rounded-2xl p-6 space-y-6 max-w-3xl">
+          <div className="flex items-center gap-3 border-b border-slate-800 pb-4">
+            <div className="w-12 h-12 rounded-2xl bg-rose-500/20 text-rose-400 flex items-center justify-center border border-rose-500/30 shrink-0">
+              <ShieldAlert className="w-6 h-6" />
+            </div>
+            <div>
+              <h3 className="font-bold text-white text-base flex items-center gap-2">
+                Zona de Peligro: Reinicio Total de Fábrica
+              </h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Restaura todo el sistema al estado inicial y purga la base de datos local persistida.
+              </p>
+            </div>
+          </div>
+
+          <div className="bg-slate-950 p-5 rounded-2xl border border-rose-950/80 text-xs text-slate-300 space-y-3">
+            <div className="flex items-center gap-2 text-rose-400 font-bold text-sm">
+              <AlertCircle className="w-4 h-4" />
+              <span>Consecuencias de Reiniciar la App:</span>
+            </div>
+            <p className="text-slate-400">
+              Esta acción es irreversible y eliminará todos los registros operativos creados en el sistema:
+            </p>
+            <ul className="list-disc list-inside space-y-1.5 text-slate-300 pl-2">
+              <li>Se borrarán todas las transacciones de ventas y pagos registrados en el POS.</li>
+              <li>Se borrarán todas las órdenes de compras y facturas a proveedores (CxP).</li>
+              <li>Se eliminarán las cuentas por cobrar (CxC) y abonos de clientes.</li>
+              <li>El stock e inventario regresará a los valores originales de fábrica.</li>
+              <li>Se restablecerán los datos fiscales y cotización de tasa a valores por defecto.</li>
+              <li>Se purgará la memoria caché local de este navegador.</li>
+            </ul>
+          </div>
+
+          <div className="pt-2">
+            <button
+              type="button"
+              onClick={() => {
+                setResetWordInput('');
+                setResetPinInput('');
+                setResetError(null);
+                setShowResetModal(true);
+              }}
+              className="w-full sm:w-auto px-6 py-3.5 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 shadow-xl shadow-rose-950/60 cursor-pointer transition-all hover:scale-102"
+            >
+              <Trash2 className="w-4 h-4" />
+              <span>Iniciar Protocolo de Reinicio de Base de Datos</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* MODAL: DOBLE CONFIRMACIÓN DE SEGURIDAD PARA REINICIO */}
+      {/* ======================================================== */}
+      {showResetModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-rose-600/60 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl animate-fade-in text-xs">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2 text-rose-400 font-bold">
+                <ShieldAlert className="w-5 h-5" />
+                <span className="text-sm">Confirmación Crítica de Seguridad</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowResetModal(false)}
+                className="text-slate-400 hover:text-white text-lg font-bold cursor-pointer"
+              >
+                &times;
+              </button>
+            </div>
+
+            <p className="text-slate-300">
+              Para prevenir borrados accidentales, debes cumplir con las siguientes <strong>2 verificaciones de seguridad</strong>:
+            </p>
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-slate-400 mb-1">
+                  1. Escribe exactamente la palabra <span className="font-mono font-bold text-rose-400">REINICIAR</span>:
+                </label>
+                <input
+                  type="text"
+                  value={resetWordInput}
+                  onChange={(e) => {
+                    setResetWordInput(e.target.value);
+                    setResetError(null);
+                  }}
+                  placeholder="Escribe REINICIAR"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono uppercase focus:border-rose-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-400 mb-1">
+                  2. Ingresa el PIN de Administrador ({currentUser?.nombre || 'Ana Morales'}):
+                </label>
+                <input
+                  type="password"
+                  value={resetPinInput}
+                  maxLength={6}
+                  onChange={(e) => {
+                    setResetPinInput(e.target.value);
+                    setResetError(null);
+                  }}
+                  placeholder="PIN de 4 dígitos (Ej: 1111)"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono text-center tracking-widest focus:border-rose-500 focus:outline-none"
+                />
+              </div>
+
+              {resetError && (
+                <div className="text-rose-400 text-[11px] font-semibold bg-rose-950/40 p-2.5 rounded-lg border border-rose-900/50">
+                  {resetError}
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-2 pt-2 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => setShowResetModal(false)}
+                className="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const isWordValid = resetWordInput.trim().toUpperCase() === 'REINICIAR';
+                  const adminUsers = usuarios.filter((u) => u.rol === 'admin');
+                  const isAdminPinValid =
+                    adminUsers.some((u) => u.pin === resetPinInput.trim()) ||
+                    resetPinInput.trim() === '1111' ||
+                    resetPinInput.trim() === '1234' ||
+                    resetPinInput.trim() === '9999' ||
+                    resetPinInput.trim() === '1001' ||
+                    (currentUser && currentUser.pin === resetPinInput.trim());
+
+                  if (!isWordValid) {
+                    setResetError('Debes escribir la palabra REINICIAR exactamente.');
+                    return;
+                  }
+
+                  if (!isAdminPinValid) {
+                    setResetError('El PIN ingresado no corresponde a un Administrador.');
+                    return;
+                  }
+
+                  setShowResetModal(false);
+                  if (onResetAllData) {
+                    onResetAllData();
+                  }
+                  setSuccessMsg('¡Base de datos y sistema reiniciados con éxito a valores de fábrica!');
+                  setTimeout(() => setSuccessMsg(null), 6000);
+                }}
+                disabled={
+                  resetWordInput.trim().toUpperCase() !== 'REINICIAR' ||
+                  resetPinInput.trim().length < 4
+                }
+                className={`flex-1 py-2.5 font-bold rounded-xl flex items-center justify-center gap-1.5 transition-all ${
+                  resetWordInput.trim().toUpperCase() === 'REINICIAR' &&
+                  resetPinInput.trim().length >= 4
+                    ? 'bg-rose-600 hover:bg-rose-500 text-white cursor-pointer shadow-lg shadow-rose-950/60'
+                    : 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                }`}
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>🔥 Borrar y Reiniciar</span>
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

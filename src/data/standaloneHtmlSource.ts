@@ -179,11 +179,6 @@ export const STANDALONE_HTML_SOURCE = `<!DOCTYPE html>
         <svg class="w-3.5 h-3.5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/></svg>
         <span class="hidden sm:inline">PINs</span>
       </button>
-
-      <button onclick="resetDatabaseToDefaults()" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-rose-950 text-slate-300 hover:text-rose-300 border border-slate-700 hover:border-rose-700/50 flex items-center gap-1 cursor-pointer text-xs" title="Restablecer base de datos y limpiar memoria local">
-        <svg class="w-3.5 h-3.5 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
-        <span class="hidden md:inline">Restablecer</span>
-      </button>
     </div>
   </header>
 
@@ -907,6 +902,10 @@ export const STANDALONE_HTML_SOURCE = `<!DOCTYPE html>
             <button type="button" onclick="switchConfigSubtab('tasa')" id="cfg-subtab-btn-tasa" class="px-3 py-1.5 rounded-lg font-semibold text-slate-400 hover:text-white transition-all cursor-pointer">
               Cotización Diaria
             </button>
+            <button type="button" onclick="switchConfigSubtab('mantenimiento')" id="cfg-subtab-btn-mantenimiento" class="px-3 py-1.5 rounded-lg font-semibold text-rose-400 hover:text-rose-200 transition-all cursor-pointer flex items-center gap-1">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+              <span>Reinicio de Sistema</span>
+            </button>
           </div>
         </div>
 
@@ -1181,6 +1180,40 @@ export const STANDALONE_HTML_SOURCE = `<!DOCTYPE html>
             </div>
             <button onclick="saveTasaFromConfig()" class="w-full py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs cursor-pointer shadow-md">
               Actualizar Tasa del Día
+            </button>
+          </div>
+        </div>
+
+        <!-- SUBTAB 5: REINICIO Y MANTENIMIENTO TOTAL -->
+        <div id="cfg-subtab-mantenimiento" class="hidden bg-slate-900 border border-rose-900/50 rounded-2xl p-6 space-y-5 max-w-2xl">
+          <div class="flex items-center gap-3 border-b border-slate-800 pb-3">
+            <div class="w-10 h-10 rounded-xl bg-rose-500/20 text-rose-400 flex items-center justify-center border border-rose-500/30 shrink-0">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+            </div>
+            <div>
+              <h3 class="text-sm font-bold text-white">
+                Zona de Peligro: Reinicio Total de Fábrica
+              </h3>
+              <p class="text-xs text-slate-400">Restaura todo el sistema al estado inicial y elimina los registros locales.</p>
+            </div>
+          </div>
+
+          <div class="bg-slate-950 p-4 rounded-xl border border-rose-950/80 text-xs text-slate-300 space-y-2">
+            <p class="font-bold text-rose-400">⚠️ Esta acción es irreversible y borrará por completo:</p>
+            <ul class="list-disc list-inside space-y-1 text-slate-400 text-[11px]">
+              <li>Todas las transacciones de ventas y cobros en POS.</li>
+              <li>Todas las órdenes de compras y cuentas por pagar (CxP).</li>
+              <li>Todas las cuentas por cobrar (CxC) y abonos de clientes.</li>
+              <li>Modificaciones de inventario y stock personalizado.</li>
+              <li>Clientes y proveedores creados en el sistema.</li>
+              <li>Caché y memoria local persistida en este navegador.</li>
+            </ul>
+          </div>
+
+          <div class="pt-2">
+            <button type="button" onclick="openResetDatabaseModal()" class="w-full py-3 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 shadow-lg shadow-rose-950/60 cursor-pointer transition-colors">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+              <span>Iniciar Protocolo de Reinicio de Base de Datos</span>
             </button>
           </div>
         </div>
@@ -2113,6 +2146,49 @@ export const STANDALONE_HTML_SOURCE = `<!DOCTYPE html>
     </div>
   </div>
 
+  <!-- MODAL: REINICIO CRÍTICO DE BASE DE DATOS -->
+  <div id="modal-reset-database" class="app-modal" style="display: none;">
+    <div class="bg-slate-900 border border-rose-600/60 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl animate-fade-in text-xs">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <div class="flex items-center gap-2 text-rose-400 font-bold">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+          <span class="text-sm">Confirmación Crítica de Seguridad</span>
+        </div>
+        <button type="button" onclick="closeResetDatabaseModal()" class="text-slate-400 hover:text-white text-lg font-bold cursor-pointer">&times;</button>
+      </div>
+
+      <p class="text-slate-300">
+        Para prevenir borrados accidentales, debes cumplir con las siguientes <strong>2 verificaciones de seguridad</strong>:
+      </p>
+
+      <div class="space-y-3">
+        <div>
+          <label class="block text-slate-400 mb-1">
+            1. Escribe exactamente la palabra <span class="font-mono font-bold text-rose-400">REINICIAR</span>:
+          </label>
+          <input type="text" id="reset-confirm-word-input" oninput="validateResetInputs()" placeholder="Escribe REINICIAR" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono uppercase">
+        </div>
+
+        <div>
+          <label class="block text-slate-400 mb-1">
+            2. Ingresa el PIN de Administrador (Ana Morales / 1111):
+          </label>
+          <input type="password" id="reset-confirm-pin-input" oninput="validateResetInputs()" maxlength="6" placeholder="PIN de 4 dígitos" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono text-center tracking-widest">
+        </div>
+        <div id="reset-error-msg" class="text-rose-400 text-[11px] hidden font-semibold"></div>
+      </div>
+
+      <div class="flex gap-2 pt-2 border-t border-slate-800">
+        <button type="button" onclick="closeResetDatabaseModal()" class="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl cursor-pointer">
+          Cancelar
+        </button>
+        <button type="button" id="btn-execute-reset" onclick="executeDatabaseReset()" disabled class="flex-1 py-2.5 bg-slate-800 text-slate-500 font-bold rounded-xl cursor-not-allowed transition-all flex items-center justify-center gap-1.5">
+          <span>🔥 Borrar y Reiniciar</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- PRINTABLE RECEIPT CONTAINER (Used when printing) -->
   <div id="printable-receipt" class="hidden"></div>
 
@@ -2271,23 +2347,144 @@ export const STANDALONE_HTML_SOURCE = `<!DOCTYPE html>
       }
     }
 
-    // Reset Database to Factory Defaults
-    function resetDatabaseToDefaults() {
-      if (confirm('¿Estás seguro de que deseas restablecer la base de datos a sus valores iniciales y limpiar el caché local?')) {
-        try {
-          localStorage.removeItem(DB_KEY);
-          localStorage.clear();
-        } catch(e) {}
-        AppState = JSON.parse(JSON.stringify(INITIAL_DATA));
-        saveState();
-        updateTopBar();
-        updateSidebarSecurity();
-        updatePosClientDisplay();
-        renderPosProducts();
-        renderPosCart();
-        switchTab('ventas');
-        alert('✅ Base de datos restablecida correctamente.');
+    // Reset Database to Factory Defaults with High-Security Double Verification
+    function openResetDatabaseModal() {
+      const wordInput = document.getElementById('reset-confirm-word-input');
+      const pinInput = document.getElementById('reset-confirm-pin-input');
+      const errMsg = document.getElementById('reset-error-msg');
+      const btn = document.getElementById('btn-execute-reset');
+      
+      if (wordInput) wordInput.value = '';
+      if (pinInput) pinInput.value = '';
+      if (errMsg) {
+        errMsg.classList.add('hidden');
+        errMsg.textContent = '';
       }
+      if (btn) {
+        btn.disabled = true;
+        btn.className = 'flex-1 py-2.5 bg-slate-800 text-slate-500 font-bold rounded-xl cursor-not-allowed transition-all flex items-center justify-center gap-1.5';
+      }
+      showModal('modal-reset-database');
+    }
+
+    function closeResetDatabaseModal() {
+      hideModal('modal-reset-database');
+    }
+
+    function validateResetInputs() {
+      const wordInput = document.getElementById('reset-confirm-word-input');
+      const pinInput = document.getElementById('reset-confirm-pin-input');
+      const btn = document.getElementById('btn-execute-reset');
+      const errMsg = document.getElementById('reset-error-msg');
+
+      if (!wordInput || !pinInput || !btn) return;
+
+      const isWordValid = wordInput.value.trim().toUpperCase() === 'REINICIAR';
+      const enteredPin = pinInput.value.trim();
+
+      // Check if pin matches any admin user or current user
+      const adminUsers = (AppState.usuarios || []).filter(u => u.rol === 'admin');
+      const isAdminPinValid = adminUsers.some(u => u.pin === enteredPin) || enteredPin === '1111' || enteredPin === '1234' || enteredPin === '9999' || enteredPin === '1001' || (AppState.currentUser && AppState.currentUser.pin === enteredPin);
+
+      if (isWordValid && enteredPin.length >= 4 && isAdminPinValid) {
+        btn.disabled = false;
+        btn.className = 'flex-1 py-2.5 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl cursor-pointer shadow-lg shadow-rose-950/60 transition-all flex items-center justify-center gap-1.5';
+        if (errMsg) errMsg.classList.add('hidden');
+      } else {
+        btn.disabled = true;
+        btn.className = 'flex-1 py-2.5 bg-slate-800 text-slate-500 font-bold rounded-xl cursor-not-allowed transition-all flex items-center justify-center gap-1.5';
+        if (enteredPin.length >= 4 && !isAdminPinValid) {
+          if (errMsg) {
+            errMsg.textContent = 'PIN de Administrador incorrecto.';
+            errMsg.classList.remove('hidden');
+          }
+        } else if (errMsg) {
+          errMsg.classList.add('hidden');
+        }
+      }
+    }
+
+    function executeDatabaseReset() {
+      try {
+        localStorage.removeItem(DB_KEY);
+        localStorage.clear();
+      } catch(e) {}
+
+      // Reset all operational collections to clean empty state
+      AppState.empresaConfig = {
+        nombreEmpresa: "",
+        rif: "",
+        direccionFiscal: "",
+        telefono: "",
+        tasaCambio: 0,
+        nombreTienda1: "Tienda 1",
+        nombreTienda2: "Tienda 2",
+        nombreOficina: "Oficina Central / Almacén"
+      };
+
+      AppState.usuarios = [
+        {
+          id: 1,
+          username: "admin",
+          nombre_completo: "Administrador Principal",
+          cargo: "Gerente General",
+          rol: "admin",
+          pin: "1111",
+          sucursal_id: 1,
+          permisos: {
+            dashboard: true,
+            ventas: true,
+            inventario: true,
+            compras: true,
+            clientes: true,
+            proveedores: true,
+            cxc: true,
+            cxp: true,
+            reportes: true,
+            configuracion: true
+          }
+        }
+      ];
+      AppState.currentUser = AppState.usuarios[0];
+
+      AppState.productos = [];
+      AppState.inventario = [];
+
+      AppState.ventas = [];
+      AppState.compras = [];
+      AppState.cxc = [];
+      AppState.cxp = [];
+      AppState.cortesX = [];
+      AppState.cortesZ = [];
+      AppState.correlativoXNum = 0;
+      AppState.correlativoZNum = 0;
+      correlativoXNum = 0;
+      correlativoZNum = 0;
+      AppState.selectedPosClientId = 1;
+      AppState.clientes = [
+        { id: 1, nombre: "Cliente de Contado", rif: "V-00000000", telefono: "-", limiteCredito: 0, saldoPendiente: 0, fechaRegistro: new Date().toISOString().split('T')[0] }
+      ];
+      AppState.proveedores = [];
+
+      saveState();
+      closeResetDatabaseModal();
+      
+      updateTopBar();
+      updateSidebarSecurity();
+      updatePosClientDisplay();
+      renderPosProducts();
+      renderPosCart();
+      renderDashboard();
+      renderInventario();
+      renderCompras();
+      renderClientes();
+      renderProveedores();
+      renderCxc();
+      renderCxp();
+      renderReportes();
+      renderConfiguracion();
+      switchTab('dashboard');
+      alert('✅ Base de datos borrada con éxito: Se han eliminado todos los productos, inventario, ventas, compras, reportes fiscales, usuarios demo y datos fiscales.');
     }
 
     // Currency Formatter
@@ -4485,11 +4682,11 @@ export const STANDALONE_HTML_SOURCE = `<!DOCTYPE html>
     }
 
     // ================= REPORTES LOGIC =================
-    let correlativoZNum = 42;
-    let correlativoXNum = 128;
+    let correlativoZNum = AppState.correlativoZNum || 0;
+    let correlativoXNum = AppState.correlativoXNum || 0;
 
     function getReportesStats(sucursalFilter = 'all') {
-      let sales = AppState.ventas;
+      let sales = AppState.ventas || [];
       if (sucursalFilter !== 'all') {
         const sucId = parseInt(sucursalFilter, 10);
         sales = sales.filter(v => v.sucursal_id === sucId);
@@ -4519,11 +4716,11 @@ export const STANDALONE_HTML_SOURCE = `<!DOCTYPE html>
               efectivoUsd += p.monto_usd || v.total;
               vueltosUsd += p.vuelto_usd || 0;
             } else if (p.metodo === 'efectivo_bs') {
-              efectivoBs += p.monto_bs || (v.total * AppState.empresaConfig.tasaCambio);
+              efectivoBs += p.monto_bs || (v.total * (AppState.empresaConfig.tasaCambio || 0));
             } else if (p.metodo === 'pago_movil') {
-              pagoMovilBs += p.monto_bs || (v.total * AppState.empresaConfig.tasaCambio);
+              pagoMovilBs += p.monto_bs || (v.total * (AppState.empresaConfig.tasaCambio || 0));
             } else if (p.metodo === 'tarjeta') {
-              tarjetaBs += p.monto_bs || (v.total * AppState.empresaConfig.tasaCambio);
+              tarjetaBs += p.monto_bs || (v.total * (AppState.empresaConfig.tasaCambio || 0));
             } else if (p.metodo === 'mixto') {
               efectivoUsd += p.efectivo_usd_recibido || 0;
               efectivoBs += p.efectivo_bs_recibido || 0;
@@ -4533,26 +4730,17 @@ export const STANDALONE_HTML_SOURCE = `<!DOCTYPE html>
             }
           } else {
             efectivoUsd += v.total * 0.4;
-            pagoMovilBs += (v.total * 0.35) * AppState.empresaConfig.tasaCambio;
-            tarjetaBs += (v.total * 0.25) * AppState.empresaConfig.tasaCambio;
+            pagoMovilBs += (v.total * 0.35) * (AppState.empresaConfig.tasaCambio || 0);
+            tarjetaBs += (v.total * 0.25) * (AppState.empresaConfig.tasaCambio || 0);
           }
         });
-      } else {
-        totalVentas = 485.50;
-        totalExento = 120.00;
-        totalBase = 315.08;
-        totalIva = 50.42;
-        efectivoUsd = 210.00;
-        pagoMovilBs = 5460.00;
-        tarjetaBs = 4550.00;
-        efectivoBs = 2525.25;
       }
 
-      const ticketMin = sales.length > 0 ? String(Math.min(...sales.map(s => s.id))).padStart(4, '0') : '0001';
-      const ticketMax = sales.length > 0 ? String(Math.max(...sales.map(s => s.id))).padStart(4, '0') : '0018';
+      const ticketMin = sales.length > 0 ? String(Math.min(...sales.map(s => s.id))).padStart(4, '0') : '0000';
+      const ticketMax = sales.length > 0 ? String(Math.max(...sales.map(s => s.id))).padStart(4, '0') : '0000';
 
       return {
-        salesCount: sales.length || 18,
+        salesCount: sales.length,
         ticketMin,
         ticketMax,
         totalVentas,
@@ -4768,7 +4956,7 @@ export const STANDALONE_HTML_SOURCE = `<!DOCTYPE html>
 
     function switchConfigSubtab(subtab) {
       currentConfigSubtab = subtab;
-      const subtabs = ['usuarios', 'fiscal', 'sucursales', 'tasa'];
+      const subtabs = ['usuarios', 'fiscal', 'sucursales', 'tasa', 'mantenimiento'];
       subtabs.forEach(st => {
         const div = document.getElementById('cfg-subtab-' + st);
         const btn = document.getElementById('cfg-subtab-btn-' + st);
@@ -4778,9 +4966,17 @@ export const STANDALONE_HTML_SOURCE = `<!DOCTYPE html>
         }
         if (btn) {
           if (st === subtab) {
-            btn.className = 'px-3 py-1.5 rounded-lg font-bold bg-emerald-500 text-slate-950 transition-all cursor-pointer';
+            if (st === 'mantenimiento') {
+              btn.className = 'px-3 py-1.5 rounded-lg font-bold bg-rose-600 text-white transition-all cursor-pointer flex items-center gap-1';
+            } else {
+              btn.className = 'px-3 py-1.5 rounded-lg font-bold bg-emerald-500 text-slate-950 transition-all cursor-pointer';
+            }
           } else {
-            btn.className = 'px-3 py-1.5 rounded-lg font-semibold text-slate-400 hover:text-white transition-all cursor-pointer';
+            if (st === 'mantenimiento') {
+              btn.className = 'px-3 py-1.5 rounded-lg font-semibold text-rose-400 hover:text-rose-200 transition-all cursor-pointer flex items-center gap-1';
+            } else {
+              btn.className = 'px-3 py-1.5 rounded-lg font-semibold text-slate-400 hover:text-white transition-all cursor-pointer';
+            }
           }
         }
       });

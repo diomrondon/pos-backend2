@@ -36,6 +36,10 @@ interface FiscalCortesViewProps {
   currentUser?: Usuario | null;
   defaultTipo?: 'X' | 'Z';
   initialBranchId?: number | 'all';
+  correlativoX?: number;
+  correlativoZ?: number;
+  onIncrementCorrelativoX?: () => void;
+  onIncrementCorrelativoZ?: () => void;
 }
 
 export interface BranchFiscalStats {
@@ -79,13 +83,35 @@ export const FiscalCortesView: React.FC<FiscalCortesViewProps> = ({
   currentUser,
   defaultTipo = 'X',
   initialBranchId = 'all',
+  correlativoX: propCorrelativoX,
+  correlativoZ: propCorrelativoZ,
+  onIncrementCorrelativoX,
+  onIncrementCorrelativoZ,
 }) => {
   const [tipoCorte, setTipoCorte] = useState<'X' | 'Z'>(defaultTipo);
   const [selectedSucursal, setSelectedSucursal] = useState<number | 'all'>(initialBranchId);
   const [selectedCajero, setSelectedCajero] = useState<string>('all');
   const [fechaCorte, setFechaCorte] = useState<string>(new Date().toISOString().split('T')[0]);
-  const [correlativoZ, setCorrelativoZ] = useState<number>(42);
-  const [correlativoX, setCorrelativoX] = useState<number>(128);
+  
+  const [localCorrelativoZ, setLocalCorrelativoZ] = useState<number>(() => {
+    try {
+      const stored = localStorage.getItem('pos_correlativo_z');
+      if (stored !== null) return parseInt(stored, 10);
+    } catch (e) {}
+    return 0;
+  });
+
+  const [localCorrelativoX, setLocalCorrelativoX] = useState<number>(() => {
+    try {
+      const stored = localStorage.getItem('pos_correlativo_x');
+      if (stored !== null) return parseInt(stored, 10);
+    } catch (e) {}
+    return 0;
+  });
+
+  const correlativoZ = propCorrelativoZ !== undefined ? propCorrelativoZ : localCorrelativoZ;
+  const correlativoX = propCorrelativoX !== undefined ? propCorrelativoX : localCorrelativoX;
+
   const [showZConfirmModal, setShowZConfirmModal] = useState(false);
   const [zSuccessMessage, setZSuccessMessage] = useState<string | null>(null);
   const [generatingPdf, setGeneratingPdf] = useState(false);
@@ -111,7 +137,7 @@ export const FiscalCortesView: React.FC<FiscalCortesViewProps> = ({
       if (fechaCorte && v.fecha) {
         const vDate = v.fecha;
         if (!vDate.includes(fechaCorte) && !vDate.includes(fechaCorte.split('-').reverse().join('/'))) {
-          // If strict date check is desired, we can filter or permit fallback
+          return false;
         }
       }
       return true;
@@ -195,8 +221,8 @@ export const FiscalCortesView: React.FC<FiscalCortesViewProps> = ({
     }
 
     const ticketCount = salesList.length;
-    const ticketMin = salesList.length > 0 ? Math.min(...salesList.map((s) => s.id)) : 1;
-    const ticketMax = salesList.length > 0 ? Math.max(...salesList.map((s) => s.id)) : (ticketCount > 0 ? ticketCount : 1);
+    const ticketMin = salesList.length > 0 ? Math.min(...salesList.map((s) => s.id)) : 0;
+    const ticketMax = salesList.length > 0 ? Math.max(...salesList.map((s) => s.id)) : 0;
 
     return {
       sucursalId: sucursalId || 0,
@@ -225,10 +251,8 @@ export const FiscalCortesView: React.FC<FiscalCortesViewProps> = ({
 
   // Main stats for the active filter
   const stats = useMemo(() => {
-    const hasSales = filteredSales.length > 0;
-    const salesList = hasSales ? filteredSales : ventas;
-    return calculateStatsForSales(salesList, selectedSucursal === 'all' ? 0 : selectedSucursal);
-  }, [filteredSales, ventas, selectedSucursal, tasa]);
+    return calculateStatsForSales(filteredSales, selectedSucursal === 'all' ? 0 : selectedSucursal);
+  }, [filteredSales, selectedSucursal, tasa]);
 
   // Breakdown per each branch (discrimination by store)
   const branchBreakdown = useMemo(() => {
@@ -261,9 +285,17 @@ export const FiscalCortesView: React.FC<FiscalCortesViewProps> = ({
 
   // Execute Corte Z
   const handleProcesarCierreZ = () => {
-    setCorrelativoZ((prev) => prev + 1);
+    if (onIncrementCorrelativoZ) {
+      onIncrementCorrelativoZ();
+    } else {
+      setLocalCorrelativoZ((prev) => {
+        const next = prev + 1;
+        try { localStorage.setItem('pos_correlativo_z', String(next)); } catch (e) {}
+        return next;
+      });
+    }
     setShowZConfirmModal(false);
-    setZSuccessMessage(`¡Corte Z Fiscal #${String(correlativoZ).padStart(5, '0')} procesado y auditado con éxito! Se archivó el cierre contable del día.`);
+    setZSuccessMessage(`¡Corte Z Fiscal #${String(correlativoZ + 1).padStart(5, '0')} procesado y auditado con éxito! Se archivó el cierre contable del día.`);
     setTimeout(() => setZSuccessMessage(null), 6000);
   };
 

@@ -41,7 +41,7 @@ import {
   DetallePagoVenta,
 } from './types';
 import { getStoredSupabaseConfig, createCustomSupabaseClient } from './lib/supabaseClient';
-import { getStoredEmpresaConfig, saveEmpresaConfig, hasSetTasaToday, markTasaSetToday, formatUSD, formatBs } from './lib/currency';
+import { getStoredEmpresaConfig, saveEmpresaConfig, hasSetTasaToday, markTasaSetToday, formatUSD, formatBs, DEFAULT_EMPRESA_CONFIG, CLEAN_EMPRESA_CONFIG } from './lib/currency';
 import { ShieldAlert, Lock, ShoppingCart, RefreshCw, Download, X, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { StandaloneHtmlDownloader } from './components/StandaloneHtmlDownloader';
 import { downloadStandaloneHtmlFile } from './lib/downloadHtml';
@@ -57,9 +57,29 @@ export default function App() {
     return false;
   });
 
+  // Persistent LocalStorage State Keys
+  const STORAGE_KEYS = {
+    ventas: 'pos_app_ventas_v2',
+    compras: 'pos_app_compras_v2',
+    clientes: 'pos_app_clientes_v2',
+    proveedores: 'pos_app_proveedores_v2',
+    cxc: 'pos_app_cxc_v2',
+    cxp: 'pos_app_cxp_v2',
+    productos: 'pos_app_productos_v2',
+    inventario: 'pos_app_inventario_v2',
+    usuarios: 'pos_app_usuarios_v2',
+    sucursales: 'pos_app_sucursales_v2',
+  };
+
   // App State: Users
-  const [usuarios, setUsuarios] = useState<Usuario[]>(INITIAL_USUARIOS);
-  const [currentUser, setCurrentUser] = useState<Usuario | null>(INITIAL_USUARIOS[0]); // Ana Morales
+  const [usuarios, setUsuarios] = useState<Usuario[]>(() => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEYS.usuarios);
+      if (stored) return JSON.parse(stored);
+    } catch (e) {}
+    return INITIAL_USUARIOS;
+  });
+  const [currentUser, setCurrentUser] = useState<Usuario | null>(() => usuarios[0] || INITIAL_USUARIOS[0]);
 
   // Company and Fiscal Settings + Daily Rate
   const [empresaConfig, setEmpresaConfig] = useState<EmpresaConfig>(getStoredEmpresaConfig);
@@ -68,19 +88,145 @@ export default function App() {
   const [showHtmlModal, setShowHtmlModal] = useState<boolean>(false);
 
   // Business Entities State
-  const [sucursales, setSucursales] = useState<Sucursal[]>(() => [
-    { id: 1, nombre: empresaConfig.nombreTienda1, tipo: 'tienda' },
-    { id: 2, nombre: empresaConfig.nombreTienda2, tipo: 'tienda' },
-    { id: 3, nombre: empresaConfig.nombreOficina, tipo: 'oficina' },
-  ]);
-  const [productos, setProductos] = useState<Producto[]>(INITIAL_PRODUCTOS);
-  const [inventario, setInventario] = useState<InventarioItem[]>(INITIAL_INVENTARIO);
-  const [ventas, setVentas] = useState<Venta[]>(INITIAL_VENTAS);
-  const [compras, setCompras] = useState<Compra[]>(INITIAL_COMPRAS);
-  const [clientes, setClientes] = useState<Cliente[]>(INITIAL_CLIENTES);
-  const [proveedores, setProveedores] = useState<Proveedor[]>(INITIAL_PROVEEDORES);
-  const [cxcList, setCxcList] = useState<CuentaPorCobrar[]>(INITIAL_CXC);
-  const [cxpList, setCxpList] = useState<CuentaPorPagar[]>(INITIAL_CXP);
+  const [sucursales, setSucursales] = useState<Sucursal[]>(() => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEYS.sucursales);
+      if (stored) return JSON.parse(stored);
+    } catch (e) {}
+    return [
+      { id: 1, nombre: empresaConfig.nombreTienda1, tipo: 'tienda' },
+      { id: 2, nombre: empresaConfig.nombreTienda2, tipo: 'tienda' },
+      { id: 3, nombre: empresaConfig.nombreOficina, tipo: 'oficina' },
+    ];
+  });
+
+  const [productos, setProductos] = useState<Producto[]>(() => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEYS.productos);
+      if (stored) return JSON.parse(stored);
+    } catch (e) {}
+    return INITIAL_PRODUCTOS;
+  });
+
+  const [inventario, setInventario] = useState<InventarioItem[]>(() => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEYS.inventario);
+      if (stored) return JSON.parse(stored);
+    } catch (e) {}
+    return INITIAL_INVENTARIO;
+  });
+
+  const [ventas, setVentas] = useState<Venta[]>(() => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEYS.ventas);
+      if (stored) return JSON.parse(stored);
+    } catch (e) {}
+    return INITIAL_VENTAS;
+  });
+
+  const [compras, setCompras] = useState<Compra[]>(() => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEYS.compras);
+      if (stored) return JSON.parse(stored);
+    } catch (e) {}
+    return INITIAL_COMPRAS;
+  });
+
+  const [clientes, setClientes] = useState<Cliente[]>(() => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEYS.clientes);
+      if (stored) return JSON.parse(stored);
+    } catch (e) {}
+    return INITIAL_CLIENTES;
+  });
+
+  const [proveedores, setProveedores] = useState<Proveedor[]>(() => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEYS.proveedores);
+      if (stored) return JSON.parse(stored);
+    } catch (e) {}
+    return INITIAL_PROVEEDORES;
+  });
+
+  const [cxcList, setCxcList] = useState<CuentaPorCobrar[]>(() => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEYS.cxc);
+      if (stored) return JSON.parse(stored);
+    } catch (e) {}
+    return INITIAL_CXC;
+  });
+
+  const [cxpList, setCxpList] = useState<CuentaPorPagar[]>(() => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEYS.cxp);
+      if (stored) return JSON.parse(stored);
+    } catch (e) {}
+    return INITIAL_CXP;
+  });
+
+  // Correlativos for Fiscal Cuts (X and Z)
+  const [correlativoX, setCorrelativoX] = useState<number>(() => {
+    try {
+      const stored = localStorage.getItem('pos_correlativo_x');
+      if (stored !== null) return parseInt(stored, 10);
+    } catch (e) {}
+    return 0;
+  });
+
+  const [correlativoZ, setCorrelativoZ] = useState<number>(() => {
+    try {
+      const stored = localStorage.getItem('pos_correlativo_z');
+      if (stored !== null) return parseInt(stored, 10);
+    } catch (e) {}
+    return 0;
+  });
+
+  useEffect(() => {
+    try { localStorage.setItem('pos_correlativo_x', String(correlativoX)); } catch (e) {}
+  }, [correlativoX]);
+
+  useEffect(() => {
+    try { localStorage.setItem('pos_correlativo_z', String(correlativoZ)); } catch (e) {}
+  }, [correlativoZ]);
+  useEffect(() => {
+    try { localStorage.setItem(STORAGE_KEYS.ventas, JSON.stringify(ventas)); } catch(e) {}
+  }, [ventas]);
+
+  useEffect(() => {
+    try { localStorage.setItem(STORAGE_KEYS.compras, JSON.stringify(compras)); } catch(e) {}
+  }, [compras]);
+
+  useEffect(() => {
+    try { localStorage.setItem(STORAGE_KEYS.clientes, JSON.stringify(clientes)); } catch(e) {}
+  }, [clientes]);
+
+  useEffect(() => {
+    try { localStorage.setItem(STORAGE_KEYS.proveedores, JSON.stringify(proveedores)); } catch(e) {}
+  }, [proveedores]);
+
+  useEffect(() => {
+    try { localStorage.setItem(STORAGE_KEYS.cxc, JSON.stringify(cxcList)); } catch(e) {}
+  }, [cxcList]);
+
+  useEffect(() => {
+    try { localStorage.setItem(STORAGE_KEYS.cxp, JSON.stringify(cxpList)); } catch(e) {}
+  }, [cxpList]);
+
+  useEffect(() => {
+    try { localStorage.setItem(STORAGE_KEYS.productos, JSON.stringify(productos)); } catch(e) {}
+  }, [productos]);
+
+  useEffect(() => {
+    try { localStorage.setItem(STORAGE_KEYS.inventario, JSON.stringify(inventario)); } catch(e) {}
+  }, [inventario]);
+
+  useEffect(() => {
+    try { localStorage.setItem(STORAGE_KEYS.usuarios, JSON.stringify(usuarios)); } catch(e) {}
+  }, [usuarios]);
+
+  useEffect(() => {
+    try { localStorage.setItem(STORAGE_KEYS.sucursales, JSON.stringify(sucursales)); } catch(e) {}
+  }, [sucursales]);
 
   // Daily exchange rate check: prompt if not confirmed today
   useEffect(() => {
@@ -591,6 +737,113 @@ export default function App() {
     );
   };
 
+  // Handler: Full Database & Application Reset (Factory Reset)
+  const handleResetAllData = () => {
+    try {
+      localStorage.clear();
+      Object.values(STORAGE_KEYS).forEach((k) => localStorage.removeItem(k));
+      localStorage.removeItem('pos_correlativo_x');
+      localStorage.removeItem('pos_correlativo_z');
+    } catch (e) {
+      console.error('Error clearing localStorage:', e);
+    }
+
+    // 1. Reset Fiscal & Company Data
+    const cleanEmpresa = CLEAN_EMPRESA_CONFIG;
+    saveEmpresaConfig(cleanEmpresa);
+    setEmpresaConfig(cleanEmpresa);
+
+    // 2. Reset Users (Single Clean Administrator)
+    const cleanUsuarios: Usuario[] = [
+      {
+        id: 1,
+        nombre_completo: 'Administrador Principal',
+        username: 'admin',
+        pin: '1111',
+        rol: 'admin',
+        sucursal_id: 1,
+        cargo: 'Gerente General',
+        permisos: {
+          dashboard: true,
+          ventas: true,
+          inventario: true,
+          compras: true,
+          clientes: true,
+          proveedores: true,
+          cxc: true,
+          cxp: true,
+          reportes: true,
+          configuracion: true,
+        },
+      },
+    ];
+    setUsuarios(cleanUsuarios);
+    setCurrentUser(cleanUsuarios[0]);
+
+    // 3. Reset Branches
+    const cleanSucursales: Sucursal[] = [
+      { id: 1, nombre: cleanEmpresa.nombreTienda1 || 'Tienda 1', tipo: 'tienda' },
+      { id: 2, nombre: cleanEmpresa.nombreTienda2 || 'Tienda 2', tipo: 'tienda' },
+      { id: 3, nombre: cleanEmpresa.nombreOficina || 'Oficina Central / Almacén', tipo: 'oficina' },
+    ];
+    setSucursales(cleanSucursales);
+
+    // 4. Reset Inventory & Products (Clean empty catalog)
+    const cleanProductos: Producto[] = [];
+    const cleanInventario: InventarioItem[] = [];
+    setProductos(cleanProductos);
+    setInventario(cleanInventario);
+
+    // 5. Reset Fiscal Cuts & Audit Correlatives
+    setCorrelativoX(0);
+    setCorrelativoZ(0);
+
+    // 6. Empty all transactional data
+    const cleanVentas: Venta[] = [];
+    const cleanCompras: Compra[] = [];
+    const cleanClientes: Cliente[] = [
+      {
+        id: 1,
+        nombre: 'Cliente de Contado',
+        rif_cedula: 'V-00000000',
+        telefono: '-',
+        email: '',
+        direccion: 'Mostrador',
+        limiteCredito: 0,
+        saldoPendiente: 0,
+        fechaRegistro: new Date().toISOString().split('T')[0],
+      },
+    ];
+    const cleanProveedores: Proveedor[] = [];
+    const cleanCxc: CuentaPorCobrar[] = [];
+    const cleanCxp: CuentaPorPagar[] = [];
+
+    setVentas(cleanVentas);
+    setCompras(cleanCompras);
+    setClientes(cleanClientes);
+    setProveedores(cleanProveedores);
+    setCxcList(cleanCxc);
+    setCxpList(cleanCxp);
+
+    // Save cleaned database to local storage immediately
+    try {
+      localStorage.setItem(STORAGE_KEYS.ventas, JSON.stringify(cleanVentas));
+      localStorage.setItem(STORAGE_KEYS.compras, JSON.stringify(cleanCompras));
+      localStorage.setItem(STORAGE_KEYS.clientes, JSON.stringify(cleanClientes));
+      localStorage.setItem(STORAGE_KEYS.proveedores, JSON.stringify(cleanProveedores));
+      localStorage.setItem(STORAGE_KEYS.cxc, JSON.stringify(cleanCxc));
+      localStorage.setItem(STORAGE_KEYS.cxp, JSON.stringify(cleanCxp));
+      localStorage.setItem(STORAGE_KEYS.productos, JSON.stringify(cleanProductos));
+      localStorage.setItem(STORAGE_KEYS.inventario, JSON.stringify(cleanInventario));
+      localStorage.setItem(STORAGE_KEYS.usuarios, JSON.stringify(cleanUsuarios));
+      localStorage.setItem(STORAGE_KEYS.sucursales, JSON.stringify(cleanSucursales));
+      localStorage.setItem('pos_correlativo_x', '0');
+      localStorage.setItem('pos_correlativo_z', '0');
+    } catch (e) {}
+
+    setActiveTab('dashboard');
+  };
+
   // Access check for activeTab
   const isGeneralManager = currentUser?.rol === 'admin';
   const hasAccessToActiveTab =
@@ -844,6 +1097,10 @@ export default function App() {
                     sucursales={sucursales}
                     empresaConfig={empresaConfig}
                     usuarios={usuarios}
+                    correlativoX={correlativoX}
+                    correlativoZ={correlativoZ}
+                    onIncrementCorrelativoX={() => setCorrelativoX((prev) => prev + 1)}
+                    onIncrementCorrelativoZ={() => setCorrelativoZ((prev) => prev + 1)}
                   />
                 )}
 
@@ -857,6 +1114,7 @@ export default function App() {
                     sucursales={sucursales}
                     currentUser={currentUser}
                     onOpenRateModal={() => setShowDailyRateModal(true)}
+                    onResetAllData={handleResetAllData}
                   />
                 )}
               </>

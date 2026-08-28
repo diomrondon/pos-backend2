@@ -13,6 +13,19 @@ export const DEFAULT_EMPRESA_CONFIG: EmpresaConfig = {
   nombreOficina: 'Oficina Central & Almacén',
 };
 
+export const CLEAN_EMPRESA_CONFIG: EmpresaConfig = {
+  nombreEmpresa: '',
+  rif: '',
+  direccionFiscal: '',
+  telefono: '',
+  logoUrl: '',
+  tasaCambio: 0,
+  fechaTasa: new Date().toLocaleDateString('es-VE'),
+  nombreTienda1: 'Tienda 1',
+  nombreTienda2: 'Tienda 2',
+  nombreOficina: 'Oficina Central / Almacén',
+};
+
 const STORAGE_KEY_EMPRESA = 'pos_empresa_config_v1';
 const STORAGE_KEY_TASA_SET_DATE = 'pos_tasa_date_v1';
 
@@ -20,7 +33,7 @@ export function getStoredEmpresaConfig(): EmpresaConfig {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_EMPRESA);
     if (raw) {
-      return { ...DEFAULT_EMPRESA_CONFIG, ...JSON.parse(raw) };
+      return JSON.parse(raw);
     }
   } catch (e) {
     console.error('Error loading empresa config:', e);

@@ -32,6 +32,10 @@ interface PdfReportsCenterProps {
   sucursales?: Sucursal[];
   empresaConfig?: EmpresaConfig;
   usuarios?: Usuario[];
+  correlativoX?: number;
+  correlativoZ?: number;
+  onIncrementCorrelativoX?: () => void;
+  onIncrementCorrelativoZ?: () => void;
 }
 
 export const PdfReportsCenter: React.FC<PdfReportsCenterProps> = ({
@@ -40,6 +44,10 @@ export const PdfReportsCenter: React.FC<PdfReportsCenterProps> = ({
   sucursales = [],
   empresaConfig,
   usuarios = [],
+  correlativoX,
+  correlativoZ,
+  onIncrementCorrelativoX,
+  onIncrementCorrelativoZ,
 }) => {
   const isGeneralManager = currentUser?.rol === 'admin';
   const [activeDoc, setActiveDoc] = useState<'cortes' | 'gerencia' | 'tecnico' | 'html'>('cortes');
@@ -543,6 +551,10 @@ export const PdfReportsCenter: React.FC<PdfReportsCenterProps> = ({
               empresaConfig={empresaConfig}
               usuarios={usuarios}
               currentUser={currentUser}
+              correlativoX={correlativoX}
+              correlativoZ={correlativoZ}
+              onIncrementCorrelativoX={onIncrementCorrelativoX}
+              onIncrementCorrelativoZ={onIncrementCorrelativoZ}
             />
           </div>
         )}
