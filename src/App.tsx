@@ -40,7 +40,12 @@ import {
   CuentaPorPagar,
   DetallePagoVenta,
 } from './types';
-import { getStoredSupabaseConfig, createCustomSupabaseClient } from './lib/supabaseClient';
+import {
+  getStoredSupabaseConfig,
+  createCustomSupabaseClient,
+  addToSyncQueue,
+  processSyncQueue,
+} from './lib/supabaseClient';
 import { getStoredEmpresaConfig, saveEmpresaConfig, hasSetTasaToday, markTasaSetToday, formatUSD, formatBs, DEFAULT_EMPRESA_CONFIG, CLEAN_EMPRESA_CONFIG } from './lib/currency';
 import { ShieldAlert, Lock, ShoppingCart, RefreshCw, Download, X, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { StandaloneHtmlDownloader } from './components/StandaloneHtmlDownloader';
@@ -313,8 +318,30 @@ export default function App() {
     }
   };
 
+  // Auto-sync queue with Supabase when online
   useEffect(() => {
     loadCloudData();
+
+    const runSync = async () => {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+      const { url, anonKey } = getStoredSupabaseConfig();
+      const client = createCustomSupabaseClient(url, anonKey);
+      if (client) {
+        await processSyncQueue(client);
+      }
+    };
+
+    const handleOnline = () => {
+      runSync();
+    };
+
+    window.addEventListener('online', handleOnline);
+    const timer = setInterval(runSync, 15000);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      clearInterval(timer);
+    };
   }, []);
 
   // Calculate totals
@@ -379,24 +406,57 @@ export default function App() {
       detalles,
     };
 
-    // Update sales history locally
+    // Update sales history locally (Immediate offline-first persistence)
     setVentas([nuevaVenta, ...ventas]);
+
+    // Queue for Supabase cloud sync
+    addToSyncQueue('ventas', 'insert', {
+      sucursal_id: sucursalId,
+      usuario_nombre: currentUser ? currentUser.nombre_completo : 'Cajero Anónimo',
+      cliente_nombre: cliente.nombre,
+      cliente_rif: cliente.rif,
+      fecha: nuevaVenta.fecha,
+      subtotal_neto: subtotalNeto,
+      base_imponible: baseImponible,
+      monto_exento: montoExento,
+      monto_iva: montoIva,
+      total: totalVenta,
+      metodo_pago: pagoDetalle.metodo,
+      detalles: JSON.stringify(detalles),
+    });
 
     // Deduct stock in inventario
     setInventario((prevInv) => {
-      return prevInv.map((invItem) => {
+      const updated = prevInv.map((invItem) => {
         if (invItem.sucursal_id === sucursalId) {
           const soldItem = items.find((i) => i.producto.id === invItem.producto_id);
           if (soldItem) {
+            const nextStock = Math.max(0, invItem.stock - soldItem.cantidad);
+            addToSyncQueue('inventario', 'upsert', {
+              id: invItem.id,
+              sucursal_id: sucursalId,
+              producto_id: invItem.producto_id,
+              stock: nextStock,
+            });
             return {
               ...invItem,
-              stock: Math.max(0, invItem.stock - soldItem.cantidad),
+              stock: nextStock,
             };
           }
         }
         return invItem;
       });
+      return updated;
     });
+
+    // Trigger instant sync attempt if online
+    if (typeof navigator !== 'undefined' && navigator.onLine) {
+      const { url, anonKey } = getStoredSupabaseConfig();
+      const client = createCustomSupabaseClient(url, anonKey);
+      if (client) {
+        processSyncQueue(client).catch(() => {});
+      }
+    }
   };
 
   // Handler: Register new purchase from supplier with itemized invoice lines & catalog sync
