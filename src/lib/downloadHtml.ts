@@ -189,9 +189,7 @@ export function generateLiveStandaloneHtml(liveData?: AppExportData): string {
       }));
     }
 
-    if (liveData.auditoria && liveData.auditoria.length > 0) {
-      exportPayload.auditoria = liveData.auditoria;
-    }
+    exportPayload.auditoria = (liveData.auditoria && liveData.auditoria.length > 0) ? liveData.auditoria : [];
 
     const serializedData = JSON.stringify(exportPayload, null, 6);
 

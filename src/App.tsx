@@ -52,6 +52,15 @@ import { ShieldAlert, Lock, ShoppingCart, RefreshCw, Download, X, PanelLeftClose
 import { StandaloneHtmlDownloader } from './components/StandaloneHtmlDownloader';
 import { downloadStandaloneHtmlFile } from './lib/downloadHtml';
 import { createAuditEntry, INITIAL_AUDITORIA_LOGS } from './lib/auditLogger';
+import {
+  getMachineFingerprint,
+  validateActivationKey,
+  generateActivationKey,
+  saveLicenseKey,
+  getStoredLicenseKey,
+  LicenseValidationResult,
+} from './lib/licensing';
+import { LicenseLockModal } from './components/LicenseLockModal';
 
 export default function App() {
   // Navigation State (starts in 'ventas' or 'dashboard' if admin)
@@ -197,6 +206,36 @@ export default function App() {
     } catch (e) {}
     return 0;
   });
+
+  // Cryptographic Hardware License State
+  const [licenseValidation, setLicenseValidation] = useState<LicenseValidationResult>(() => {
+    let key = getStoredLicenseKey();
+    if (!key) {
+      // Auto-provision initial Lifetime Developer License for this machine
+      const initialKey = generateActivationKey({
+        machineId: getMachineFingerprint(),
+        empresa: 'Corporación Los Andes C.A.',
+        rif: 'J-12345678-0',
+        tipo: 'vitalicia',
+        fechaEmision: new Date().toISOString().split('T')[0],
+        fechaVencimiento: 'VITALICIA',
+        cajasMax: 3,
+        sucursalesMax: 2,
+      });
+      saveLicenseKey(initialKey);
+      key = initialKey;
+    }
+    return validateActivationKey(key);
+  });
+
+  const [showLicenseLockModal, setShowLicenseLockModal] = useState<boolean>(!licenseValidation.isValid);
+
+  const recheckLicense = () => {
+    const key = getStoredLicenseKey();
+    const result = validateActivationKey(key);
+    setLicenseValidation(result);
+    setShowLicenseLockModal(!result.isValid);
+  };
 
   useEffect(() => {
     try { localStorage.setItem('pos_correlativo_x', String(correlativoX)); } catch (e) {}
@@ -1225,6 +1264,7 @@ export default function App() {
                       cxp: cxpList,
                       sucursales,
                       currentUser,
+                      auditoria: auditoriaLogs,
                     })
                   }
                   className="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 font-bold flex items-center gap-1.5 transition-all cursor-pointer text-xs"
@@ -1440,6 +1480,16 @@ export default function App() {
                       );
                       setAuditoriaLogs([entry]);
                     }}
+                    productos={productos}
+                    inventario={inventario}
+                    ventas={ventas}
+                    compras={compras}
+                    clientes={clientes}
+                    proveedores={proveedores}
+                    cxcList={cxcList}
+                    cxpList={cxpList}
+                    licenseValidationResult={licenseValidation}
+                    onLicenseChanged={recheckLicense}
                   />
                 )}
               </>
@@ -1447,6 +1497,23 @@ export default function App() {
           </main>
         </div>
       </div>
+
+      {/* Cryptographic License Lock Screen Modal (If invalid or unactivated) */}
+      {(!licenseValidation.isValid || showLicenseLockModal) && (
+        <LicenseLockModal
+          validationResult={licenseValidation}
+          onLicenseActivated={(key) => {
+            recheckLicense();
+            logAuditoria(
+              'Seguridad',
+              'ACCESO',
+              'Activación de licencia de software exitosa con firma criptográfica',
+              { detalles: `Clave registrada y validada para este ID de hardware.` }
+            );
+          }}
+          canDismiss={false}
+        />
+      )}
 
       {/* Daily Exchange Rate Prompt Modal */}
       <DailyRateModal

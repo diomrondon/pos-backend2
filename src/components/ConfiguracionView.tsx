@@ -28,11 +28,14 @@ import {
   EyeOff,
   Sparkles,
   ClipboardList,
+  Fingerprint,
 } from 'lucide-react';
-import { Usuario, EmpresaConfig, Sucursal, ModuloPermisos, RegistroAuditoria } from '../types';
+import { Usuario, EmpresaConfig, Sucursal, ModuloPermisos, RegistroAuditoria, Producto, InventarioItem, Venta, Compra, Cliente, Proveedor, CuentaPorCobrar, CuentaPorPagar } from '../types';
 import { formatBs } from '../lib/currency';
 import { StandaloneHtmlDownloader } from './StandaloneHtmlDownloader';
 import { AuditoriaView } from './AuditoriaView';
+import { LicenseManagerView } from './LicenseManagerView';
+import { LicenseValidationResult } from '../lib/licensing';
 
 interface ConfiguracionViewProps {
   usuarios: Usuario[];
@@ -45,6 +48,16 @@ interface ConfiguracionViewProps {
   onResetAllData?: () => void;
   auditoriaLogs?: RegistroAuditoria[];
   onClearAuditoriaLogs?: () => void;
+  productos?: Producto[];
+  inventario?: InventarioItem[];
+  ventas?: Venta[];
+  compras?: Compra[];
+  clientes?: Cliente[];
+  proveedores?: Proveedor[];
+  cxcList?: CuentaPorCobrar[];
+  cxpList?: CuentaPorPagar[];
+  licenseValidationResult?: LicenseValidationResult;
+  onLicenseChanged?: () => void;
 }
 
 export const ConfiguracionView: React.FC<ConfiguracionViewProps> = ({
@@ -58,10 +71,20 @@ export const ConfiguracionView: React.FC<ConfiguracionViewProps> = ({
   onResetAllData,
   auditoriaLogs = [],
   onClearAuditoriaLogs,
+  productos = [],
+  inventario = [],
+  ventas = [],
+  compras = [],
+  clientes = [],
+  proveedores = [],
+  cxcList = [],
+  cxpList = [],
+  licenseValidationResult,
+  onLicenseChanged = () => {},
 }) => {
   const isGeneralManager = currentUser?.rol === 'admin';
 
-  const [activeSubTab, setActiveSubTab] = useState<'usuarios' | 'empresa' | 'sucursales' | 'tasa' | 'auditoria' | 'html' | 'reinicio'>('usuarios');
+  const [activeSubTab, setActiveSubTab] = useState<'usuarios' | 'empresa' | 'sucursales' | 'tasa' | 'licencia' | 'auditoria' | 'html' | 'reinicio'>('usuarios');
 
   // Reset Modal & Verification State
   const [showResetModal, setShowResetModal] = useState<boolean>(false);
@@ -471,6 +494,18 @@ export const ConfiguracionView: React.FC<ConfiguracionViewProps> = ({
           >
             <TrendingUp className="w-3.5 h-3.5" />
             <span>Cotización Diaria</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveSubTab('licencia')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
+              activeSubTab === 'licencia'
+                ? 'bg-emerald-500 text-slate-950 font-bold shadow'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <Fingerprint className="w-3.5 h-3.5" />
+            <span>Licencia & Seguridad</span>
           </button>
           <button
             type="button"
@@ -1309,7 +1344,35 @@ export const ConfiguracionView: React.FC<ConfiguracionViewProps> = ({
             usuarios,
             sucursales,
             currentUser,
+            productos,
+            inventario,
+            ventas,
+            compras,
+            clientes,
+            proveedores,
+            cxc: cxcList,
+            cxp: cxpList,
+            auditoria: auditoriaLogs,
           }}
+        />
+      )}
+
+      {/* ======================================================== */}
+      {/* SUB-TAB: LICENCIAMIENTO CRIPTOGRÁFICO Y HARDWARE LOCK */}
+      {/* ======================================================== */}
+      {activeSubTab === 'licencia' && (
+        <LicenseManagerView
+          validationResult={
+            licenseValidationResult || {
+              isValid: true,
+              isExpired: false,
+              isMachineMismatch: false,
+              isTampered: false,
+              status: 'active',
+              message: 'Licencia activa.',
+            }
+          }
+          onLicenseChanged={onLicenseChanged}
         />
       )}
 

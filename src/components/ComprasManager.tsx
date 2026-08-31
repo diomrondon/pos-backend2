@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   ShoppingBag,
   Plus,
@@ -21,6 +21,7 @@ import {
   Tag,
   ArrowRight,
   Hash,
+  GripHorizontal,
 } from 'lucide-react';
 import { Compra, Proveedor, Producto, Sucursal, EmpresaConfig, Usuario, DetalleCompra } from '../types';
 import { formatUSD, formatBs, formatDual } from '../lib/currency';
@@ -47,6 +48,50 @@ export const ComprasManager: React.FC<ComprasManagerProps> = ({
   const [showNewModal, setShowNewModal] = useState(false);
   const [selectedCompraDetail, setSelectedCompraDetail] = useState<Compra | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+
+  // Draggable Modal State
+  const [modalPos, setModalPos] = useState({ x: 0, y: 0 });
+  const [isDraggingModal, setIsDraggingModal] = useState(false);
+  const dragStartRef = useRef({ startX: 0, startY: 0, initialX: 0, initialY: 0 });
+
+  const handleHeaderMouseDown = (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest('button, input, select, textarea, a')) return;
+    setIsDraggingModal(true);
+    dragStartRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      initialX: modalPos.x,
+      initialY: modalPos.y,
+    };
+  };
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isDraggingModal) return;
+      const dx = e.clientX - dragStartRef.current.startX;
+      const dy = e.clientY - dragStartRef.current.startY;
+      setModalPos({
+        x: dragStartRef.current.initialX + dx,
+        y: dragStartRef.current.initialY + dy,
+      });
+    };
+    const handleMouseUp = () => {
+      if (isDraggingModal) setIsDraggingModal(false);
+    };
+    if (isDraggingModal) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+    }
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isDraggingModal]);
+
+  const handleOpenNewModal = () => {
+    setModalPos({ x: 0, y: 0 });
+    setShowNewModal(true);
+  };
 
   // New Purchase Invoice Form State
   const [proveedorId, setProveedorId] = useState<number>(proveedores[0]?.id || 1);
@@ -295,7 +340,7 @@ export const ComprasManager: React.FC<ComprasManagerProps> = ({
         <button
           type="button"
           onClick={() => {
-            setShowNewModal(true);
+            handleOpenNewModal();
             setItemsCompra([]);
             setNumeroFactura(`FAC-${Math.floor(1000 + Math.random() * 9000)}`);
           }}
@@ -430,30 +475,48 @@ export const ComprasManager: React.FC<ComprasManagerProps> = ({
       {/* MODAL: REGISTRO COMPLETO DE FACTURA DE PROVEEDOR (NUEVA COMPRA)                         */}
       {/* ========================================================================================= */}
       {showNewModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-sm animate-fade-in">
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-5xl overflow-hidden shadow-2xl space-y-4 max-h-[92vh] flex flex-col">
-            {/* Modal Header */}
-            <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/80">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/85 backdrop-blur-sm animate-fade-in overflow-y-auto">
+          <div
+            style={{
+              transform: `translate(${modalPos.x}px, ${modalPos.y}px)`,
+              transition: isDraggingModal ? 'none' : 'transform 0.05s ease-out',
+            }}
+            className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-5xl overflow-hidden shadow-2xl space-y-4 max-h-[94vh] flex flex-col my-auto relative"
+          >
+            {/* Modal Header with Grab Drag Handle */}
+            <div
+              onMouseDown={handleHeaderMouseDown}
+              onDoubleClick={() => setModalPos({ x: 0, y: 0 })}
+              title="Arrastra con el mouse para mover la ventana. Doble clic para centrar."
+              className="p-3.5 sm:p-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/90 cursor-grab active:cursor-grabbing select-none"
+            >
               <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                <div className="p-2 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shrink-0">
                   <FileText className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-white text-base">
-                    Registro de Factura de Proveedor (Ingreso a Inventario)
-                  </h3>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-bold text-white text-sm sm:text-base">
+                      Registro de Factura de Proveedor (Ingreso a Inventario)
+                    </h3>
+                    <span className="hidden sm:inline-flex items-center gap-1 text-[10px] text-slate-400 bg-slate-800/70 border border-slate-700/60 px-2 py-0.5 rounded-md font-mono">
+                      <GripHorizontal className="w-3 h-3 text-slate-400" /> Mover con mouse
+                    </span>
+                  </div>
                   <p className="text-[11px] text-slate-400">
-                    Cargue todos los artículos facturados, códigos de barras, unidades (UND/KG/L), fracciones, costos y PVP al público.
+                    Cargue artículos facturados, códigos de barras, presentación (UND/KG/L), fracciones, costos y PVP al público.
                   </p>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => setShowNewModal(false)}
-                className="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-800 cursor-pointer transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setShowNewModal(false)}
+                  className="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-800 cursor-pointer transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             <form onSubmit={handleSubmitCompra} className="p-4 sm:p-5 space-y-4 overflow-y-auto flex-1 custom-scrollbar">
